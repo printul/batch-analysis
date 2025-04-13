@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 
 interface TabNavigationProps {
-  activeTab: 'tweets' | 'accounts' | 'admin';
-  setActiveTab: (tab: 'tweets' | 'accounts' | 'admin') => void;
+  activeTab: 'tweets' | 'accounts' | 'analysis' | 'admin';
+  setActiveTab: (tab: 'tweets' | 'accounts' | 'analysis' | 'admin') => void;
   isAdmin: boolean;
 }
 
@@ -33,6 +33,18 @@ export default function TabNavigation({ activeTab, setActiveTab, isAdmin }: TabN
             }`}
           >
             Twitter Accounts
+          </Button>
+          
+          <Button
+            variant="link"
+            onClick={() => setActiveTab('analysis')}
+            className={`px-1 py-4 text-sm font-medium border-b-2 ${
+              activeTab === 'analysis'
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+            }`}
+          >
+            Sentiment Analysis
           </Button>
           
           {isAdmin && (

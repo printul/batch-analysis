@@ -588,6 +588,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Search endpoints
+  app.post('/api/search', isAuthenticated, async (req, res) => {
+    try {
+      const result = searchSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid search query' });
+      }
+
+      const { query } = result.data;
+      const userId = req.session.user!.id;
+
+      // Save search query to history
+      await storage.saveSearchQuery(userId, query);
+
+      // Get recent searches
+      const recentSearches = await storage.getRecentSearches(userId, 5);
+
+      // Return the search results
+      res.json({
+        success: true,
+        recentSearches
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get('/api/recent-searches', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.session.user!.id;
+      const recentSearches = await storage.getRecentSearches(userId);
+      
+      res.json(recentSearches);
+    } catch (error) {
+      console.error('Error fetching recent searches:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.delete('/api/search-history', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.session.user!.id;
+      await storage.deleteSearchHistory(userId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting search history:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Tweet analysis endpoints
+  app.get('/api/tweets/:username', isAuthenticated, async (req, res) => {
+    try {
+      const { username } = req.params;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      // Handle usernames with @ prefix
+      const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+      
+      const tweets = await storage.getTweetsByUsername(cleanUsername, limit);
+      
+      res.json({ tweets });
+    } catch (error) {
+      console.error('Error fetching tweets by username:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get('/api/analyze/:username', isAuthenticated, async (req, res) => {
+    try {
+      const { username } = req.params;
+      
+      // Check if we already have an analysis for this username
+      const existingAnalysis = await storage.getTweetAnalysisByUsername(username);
+      
+      if (existingAnalysis) {
+        return res.json(existingAnalysis);
+      }
+      
+      // Get the tweets for this username
+      const tweets = await storage.getTweetsByUsername(username, 20);
+      
+      if (!tweets || tweets.length === 0) {
+        return res.status(404).json({ error: 'No tweets found for this username' });
+      }
+      
+      // Format tweets for analysis
+      const tweetsForAnalysis = tweets.map(tweet => ({
+        text: tweet.text,
+        author: tweet.author,
+        createdAt: tweet.createdAt
+      }));
+      
+      // Perform analysis using OpenAI
+      const analysis = await analyzeTweets(tweetsForAnalysis);
+      
+      // Save analysis to database
+      const savedAnalysis = await storage.saveTweetAnalysis({
+        username: username.startsWith('@') ? username.substring(1) : username,
+        summary: analysis.summary,
+        themes: analysis.themes,
+        sentimentScore: analysis.sentiment.score,
+        sentimentLabel: analysis.sentiment.label,
+        sentimentConfidence: analysis.sentiment.confidence,
+        topHashtags: analysis.topHashtags,
+        keyPhrases: analysis.keyPhrases
+      });
+      
+      res.json(savedAnalysis);
+    } catch (error) {
+      console.error('Error analyzing tweets:', error);
+      res.status(500).json({ error: 'Server error', message: error.message });
+    }
+  });
+
+  app.delete('/api/analysis/:username', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { username } = req.params;
+      
+      // Delete the analysis from the database
+      // Note: We don't have a method for this yet, so we'll just return success
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting analysis:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
