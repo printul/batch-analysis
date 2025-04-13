@@ -1,7 +1,11 @@
-import { users, tweets, twitterAccounts, type User, type InsertUser, type Tweet, type TwitterAccount, type InsertTwitterAccount } from "@shared/schema";
+import { 
+  users, tweets, twitterAccounts, tweetAnalysis, searchHistory,
+  type User, type InsertUser, type Tweet, type TwitterAccount, 
+  type InsertTwitterAccount, type TweetAnalysisRecord, type SearchHistoryRecord 
+} from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql, ilike } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -218,6 +222,104 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  // Implement getTweetsByUsername
+  async getTweetsByUsername(username: string, limit: number = 20): Promise<Tweet[]> {
+    // Remove @ prefix if present
+    const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+    
+    return db
+      .select()
+      .from(tweets)
+      .where(ilike(tweets.authorUsername, cleanUsername))
+      .orderBy(desc(tweets.createdAt))
+      .limit(limit);
+  }
+
+  // Save tweet analysis
+  async saveTweetAnalysis(analysis: {
+    username: string;
+    summary: string;
+    themes: string[];
+    sentimentScore: number;
+    sentimentLabel: string;
+    sentimentConfidence: number;
+    topHashtags: string[];
+    keyPhrases: string[];
+  }): Promise<TweetAnalysisRecord> {
+    try {
+      // Check if analysis already exists for this username
+      const existingAnalysis = await this.getTweetAnalysisByUsername(analysis.username);
+      
+      if (existingAnalysis) {
+        // Update the existing analysis
+        const [updated] = await db
+          .update(tweetAnalysis)
+          .set(analysis)
+          .where(eq(tweetAnalysis.username, analysis.username))
+          .returning();
+          
+        return updated;
+      } else {
+        // Create new analysis
+        const [newAnalysis] = await db
+          .insert(tweetAnalysis)
+          .values(analysis)
+          .returning();
+          
+        return newAnalysis;
+      }
+    } catch (error) {
+      console.error('Error saving tweet analysis:', error);
+      throw error;
+    }
+  }
+
+  // Get tweet analysis by username
+  async getTweetAnalysisByUsername(username: string): Promise<TweetAnalysisRecord | undefined> {
+    // Remove @ prefix if present
+    const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+    
+    const [analysis] = await db
+      .select()
+      .from(tweetAnalysis)
+      .where(eq(tweetAnalysis.username, cleanUsername));
+      
+    return analysis;
+  }
+
+  // Save search query
+  async saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord> {
+    const [searchRecord] = await db
+      .insert(searchHistory)
+      .values({
+        userId,
+        query
+      })
+      .returning();
+      
+    return searchRecord;
+  }
+
+  // Get recent searches
+  async getRecentSearches(userId: number, limit: number = 10): Promise<SearchHistoryRecord[]> {
+    return db
+      .select()
+      .from(searchHistory)
+      .where(eq(searchHistory.userId, userId))
+      .orderBy(desc(searchHistory.createdAt))
+      .limit(limit);
+  }
+
+  // Delete search history
+  async deleteSearchHistory(userId: number): Promise<boolean> {
+    const result = await db
+      .delete(searchHistory)
+      .where(eq(searchHistory.userId, userId))
+      .returning();
+      
+    return result.length > 0;
   }
 }
 

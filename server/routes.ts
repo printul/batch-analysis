@@ -4,8 +4,9 @@ import { storage } from "./storage";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
-import { loginUserSchema, insertUserSchema, twitterAccountSchema } from "@shared/schema";
+import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema } from "@shared/schema";
 import NodeCron from "node-cron";
+import { analyzeTweets } from "./openai";
 
 declare module 'express-session' {
   interface SessionData {
