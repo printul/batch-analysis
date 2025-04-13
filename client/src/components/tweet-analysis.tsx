@@ -62,7 +62,14 @@ export default function TweetAnalysis() {
       
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(text || response.statusText);
+        try {
+          // Try to parse the error as JSON
+          const errorData = JSON.parse(text);
+          throw new Error(`${response.status}: ${errorData.error || response.statusText}`);
+        } catch (parseError) {
+          // If parsing fails, use the raw text
+          throw new Error(`${response.status}: ${text || response.statusText}`);
+        }
       }
       
       return await response.json() as AnalysisData;
@@ -171,8 +178,17 @@ export default function TweetAnalysis() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>
-            {error?.message || "Failed to analyze tweets. Please try a different username or try again later."}
+            {error?.message?.includes("404") 
+              ? "No tweets found for this username. This account may not exist or may not have any recent tweets."
+              : error?.message?.includes("429") 
+                ? "Twitter API rate limit reached. Please try again in a few minutes or try a different username."
+                : error?.message || "Failed to analyze tweets. Please try a different username or try again later."}
           </AlertDescription>
+          <div className="mt-4">
+            <p className="text-xs text-red-800">
+              You can also try adding the Twitter account first via the "Twitter Accounts" tab before analyzing.
+            </p>
+          </div>
         </Alert>
       )}
 

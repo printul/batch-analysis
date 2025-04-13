@@ -661,19 +661,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/analyze/:username', isAuthenticated, async (req, res) => {
     try {
       const { username } = req.params;
+      const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
       
       // Check if we already have an analysis for this username
-      const existingAnalysis = await storage.getTweetAnalysisByUsername(username);
+      const existingAnalysis = await storage.getTweetAnalysisByUsername(cleanUsername);
       
       if (existingAnalysis) {
         return res.json(existingAnalysis);
       }
       
       // Get the tweets for this username
-      const tweets = await storage.getTweetsByUsername(username, 20);
+      let tweets = await storage.getTweetsByUsername(cleanUsername, 20);
       
+      // If no tweets found, try to fetch them first (if Twitter client is available)
+      if ((!tweets || tweets.length === 0) && twitterClient) {
+        try {
+          console.log(`No tweets found for ${cleanUsername}, attempting to fetch them now...`);
+          
+          // Find user by username 
+          const userResponse = await twitterClient.v2.userByUsername(cleanUsername, {
+            'user.fields': ['name', 'username', 'id'],
+          });
+          
+          if (!userResponse || !userResponse.data) {
+            return res.status(404).json({ 
+              error: `Twitter user ${cleanUsername} not found. Please check the username and try again.` 
+            });
+          }
+          
+          const user = userResponse.data;
+          
+          // Get recent tweets from this user
+          const userTweets = await twitterClient.v2.userTimeline(user.id, {
+            max_results: 20,
+            'tweet.fields': ['created_at'],
+          });
+          
+          if (!userTweets || !userTweets.data || !userTweets.data.data || userTweets.data.data.length === 0) {
+            return res.status(404).json({ 
+              error: `No tweets found for @${cleanUsername}. The account may not have any recent tweets.`
+            });
+          }
+          
+          // Save the fetched tweets to the database
+          for (const tweet of userTweets.data.data) {
+            if (!tweet) continue;
+            
+            await storage.saveTweet({
+              tweetId: tweet.id,
+              text: tweet.text,
+              author: user.name || cleanUsername,
+              authorUsername: user.username || cleanUsername,
+              createdAt: new Date(tweet.created_at || new Date()),
+              fetchedAt: new Date()
+            });
+          }
+          
+          // Update last fetched timestamp for this account if it exists in our system
+          const accountRecord = await storage.getTwitterAccountByUsername(cleanUsername);
+          if (accountRecord) {
+            await storage.updateTwitterAccountLastFetched(accountRecord.id, new Date());
+          }
+          
+          console.log(`Fetched ${userTweets.data.data.length} tweets for ${cleanUsername}`);
+          
+          // Now get the saved tweets for analysis
+          tweets = await storage.getTweetsByUsername(cleanUsername, 20);
+          
+        } catch (fetchError) {
+          console.error(`Error fetching tweets for ${cleanUsername}:`, fetchError);
+          return res.status(429).json({ 
+            error: 'Unable to fetch tweets due to Twitter API rate limits. Please try a different username or try again later.',
+            details: fetchError.message
+          });
+        }
+      }
+      
+      // If still no tweets, return error
       if (!tweets || tweets.length === 0) {
-        return res.status(404).json({ error: 'No tweets found for this username' });
+        return res.status(404).json({ 
+          error: `No tweets found for @${cleanUsername}. Please verify the username or try adding this account via the "Twitter Accounts" tab first.`
+        });
       }
       
       // Format tweets for analysis
@@ -688,7 +756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Save analysis to database
       const savedAnalysis = await storage.saveTweetAnalysis({
-        username: username.startsWith('@') ? username.substring(1) : username,
+        username: cleanUsername,
         summary: analysis.summary,
         themes: analysis.themes,
         sentimentScore: analysis.sentiment.score,
@@ -701,7 +769,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(savedAnalysis);
     } catch (error) {
       console.error('Error analyzing tweets:', error);
-      res.status(500).json({ error: 'Server error', message: error.message });
+      res.status(500).json({ 
+        error: 'Server error', 
+        message: error.message || 'An unknown error occurred during tweet analysis' 
+      });
     }
   });
 
