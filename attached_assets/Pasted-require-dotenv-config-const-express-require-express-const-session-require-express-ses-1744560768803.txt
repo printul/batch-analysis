@@ -1,0 +1,272 @@
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const { TwitterApi } = require('twitter-api-v2');
+const cron = require('node-cron');
+const path = require('path');
+
+// Initialize Express app
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false } // Set to true if using HTTPS
+}));
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Define schemas
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  isAdmin: { type: Boolean, default: false },
+  twitterUsername: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const tweetSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  text: { type: String, required: true },
+  author: { type: String, required: true },
+  authorUsername: { type: String, required: true },
+  createdAt: { type: Date, required: true },
+  fetchedAt: { type: Date, default: Date.now }
+});
+
+// Create models
+const User = mongoose.model('User', userSchema);
+const Tweet = mongoose.model('Tweet', tweetSchema);
+
+// Initialize Twitter client
+const twitterClient = new TwitterApi({
+  appKey: process.env.TWITTER_API_KEY,
+  appSecret: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  bearerToken: process.env.TWITTER_BEARER_TOKEN
+});
+
+// Function to fetch tweets from Twitter API
+async function fetchTweets() {
+  try {
+    console.log('Fetching tweets...');
+    const timeline = await twitterClient.v2.homeTimeline({
+      max_results: 50,
+      'tweet.fields': ['created_at', 'author_id'],
+      'user.fields': ['name', 'username'],
+      expansions: ['author_id']
+    });
+    
+    // Process and save tweets
+    for (const tweet of timeline.data.data) {
+      const author = timeline.data.includes.users.find(user => user.id === tweet.author_id);
+      
+      await Tweet.findOneAndUpdate(
+        { id: tweet.id },
+        {
+          id: tweet.id,
+          text: tweet.text,
+          author: author.name,
+          authorUsername: author.username,
+          createdAt: new Date(tweet.created_at),
+          fetchedAt: new Date()
+        },
+        { upsert: true, new: true }
+      );
+    }
+    
+    console.log(`Fetched and saved ${timeline.data.data.length} tweets`);
+  } catch (error) {
+    console.error('Error fetching tweets:', error);
+  }
+}
+
+// Schedule tweet fetching
+cron.schedule(`*/${Math.ceil(process.env.TWEET_FETCH_INTERVAL / 60000)} * * * *`, fetchTweets);
+
+// Routes
+// Middleware to check if user is authenticated
+const isAuthenticated = (req, res, next) => {
+  if (req.session.user) {
+    return next();
+  }
+  res.redirect('/login.html');
+};
+
+// Middleware to check if user is admin
+const isAdmin = (req, res, next) => {
+  if (req.session.user && req.session.user.isAdmin) {
+    return next();
+  }
+  res.status(403).json({ error: 'Access denied' });
+};
+
+// Serve the login page as default
+app.get('/', (req, res) => {
+  if (req.session.user) {
+    res.redirect('/dashboard.html');
+  } else {
+    res.redirect('/login.html');
+  }
+});
+
+// API endpoints
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    // Check if user exists
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Check password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Set session
+    req.session.user = {
+      id: user._id,
+      username: user.username,
+      isAdmin: user.isAdmin
+    };
+    
+    res.json({ success: true, isAdmin: user.isAdmin });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/login.html');
+});
+
+app.get('/api/tweets', isAuthenticated, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(process.env.TWEETS_PER_PAGE) || 20;
+    const skip = (page - 1) * limit;
+    
+    const tweets = await Tweet.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    const totalTweets = await Tweet.countDocuments();
+    const totalPages = Math.ceil(totalTweets / limit);
+    
+    res.json({
+      tweets,
+      pagination: {
+        totalTweets,
+        totalPages,
+        currentPage: page,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching tweets:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/users', isAdmin, async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/users', isAdmin, async (req, res) => {
+  try {
+    const { username, password, isAdmin } = req.body;
+    
+    // Check if user already exists
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    // Create new user
+    const newUser = new User({
+      username,
+      password: hashedPassword,
+      isAdmin: isAdmin || false
+    });
+    
+    await newUser.save();
+    
+    res.status(201).json({ success: true, user: { username, isAdmin: newUser.isAdmin } });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/users/:id', isAdmin, async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Initialize admin user if it doesn't exist
+async function initAdminUser() {
+  try {
+    const adminUser = await User.findOne({ username: process.env.ADMIN_USERNAME });
+    if (!adminUser) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, salt);
+      
+      const newAdmin = new User({
+        username: process.env.ADMIN_USERNAME,
+        password: hashedPassword,
+        isAdmin: true
+      });
+      
+      await newAdmin.save();
+      console.log('Admin user created');
+    }
+  } catch (error) {
+    console.error('Error creating admin user:', error);
+  }
+}
+
+// Start server
+app.listen(PORT, async () => {
+  console.log(`Server running on port ${PORT}`);
+  await initAdminUser();
+  // Initial tweet fetch
+  fetchTweets();
+});
