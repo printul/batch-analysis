@@ -1,5 +1,7 @@
 import { users, tweets, type User, type InsertUser, type Tweet } from "@shared/schema";
 import bcrypt from "bcryptjs";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -16,18 +18,8 @@ export interface IStorage {
   getTweetCount(): Promise<number>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private tweets: Map<number, Tweet>;
-  private userCurrentId: number;
-  private tweetCurrentId: number;
-
+export class DatabaseStorage implements IStorage {
   constructor() {
-    this.users = new Map();
-    this.tweets = new Map();
-    this.userCurrentId = 1;
-    this.tweetCurrentId = 1;
-    
     // Initialize with admin user
     this.createInitialAdminUser();
   }
@@ -38,53 +30,54 @@ export class MemStorage implements IStorage {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash("admin123", salt);
       
-      this.users.set(this.userCurrentId, {
-        id: this.userCurrentId++,
+      await this.createUser({
         username: "admin",
         password: hashedPassword,
         isAdmin: true,
-        createdAt: new Date(),
       });
     }
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    // Hash the password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(insertUser.password, salt);
+    // Hash the password if it's not already hashed
+    let userPassword = insertUser.password;
+    if (!userPassword.startsWith('$2a$') && !userPassword.startsWith('$2b$')) {
+      const salt = await bcrypt.genSalt(10);
+      userPassword = await bcrypt.hash(insertUser.password, salt);
+    }
     
-    const id = this.userCurrentId++;
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      password: hashedPassword,
-      createdAt: new Date(),
-    };
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...insertUser,
+        password: userPassword,
+      })
+      .returning();
     
-    this.users.set(id, user);
-    return { ...user, password: "[REDACTED]" } as User; // Don't return the password
+    return { ...user, password: "[REDACTED]" } as User;
   }
 
   async getAllUsers(): Promise<User[]> {
-    // Return all users without passwords
-    return Array.from(this.users.values()).map(user => ({
+    const allUsers = await db.select().from(users);
+    return allUsers.map(user => ({
       ...user,
       password: "[REDACTED]"
     }));
   }
 
   async deleteUser(id: number): Promise<boolean> {
-    return this.users.delete(id);
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
   }
 
   async validateUserCredentials(username: string, password: string): Promise<User | null> {
@@ -94,23 +87,26 @@ export class MemStorage implements IStorage {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return null;
     
-    // Return the user without the password
     return { ...user, password: "[REDACTED]" } as User;
   }
 
   async getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }> {
-    const allTweets = Array.from(this.tweets.values());
-    const sortedTweets = allTweets.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    // Get total count
+    const [countResult] = await db.select({
+      count: tweets.id,
+    }).from(tweets).$dynamic();
     
-    const totalTweets = sortedTweets.length;
+    const totalTweets = Number(countResult?.count) || 0;
     const totalPages = Math.ceil(totalTweets / limit);
     
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
+    const offset = (page - 1) * limit;
     
-    const paginatedTweets = sortedTweets.slice(startIndex, endIndex);
+    const paginatedTweets = await db
+      .select()
+      .from(tweets)
+      .orderBy(desc(tweets.createdAt))
+      .limit(limit)
+      .offset(offset);
     
     return {
       tweets: paginatedTweets,
@@ -120,16 +116,22 @@ export class MemStorage implements IStorage {
   }
 
   async saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet> {
-    const id = this.tweetCurrentId++;
-    const newTweet = { ...tweet, id } as Tweet;
+    const [newTweet] = await db
+      .insert(tweets)
+      .values(tweet)
+      .returning();
     
-    this.tweets.set(id, newTweet);
     return newTweet;
   }
 
   async getTweetCount(): Promise<number> {
-    return this.tweets.size;
+    const [result] = await db
+      .select({ count: tweets.id })
+      .from(tweets)
+      .$dynamic();
+    
+    return Number(result?.count) || 0;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
