@@ -91,12 +91,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }> {
-    // Get total count
-    const [countResult] = await db.select({
-      count: tweets.id,
-    }).from(tweets).$dynamic();
+    // Get total count using SQL
+    const { rows } = await db.$client.query('SELECT COUNT(*) as count FROM tweets');
     
-    const totalTweets = Number(countResult?.count) || 0;
+    const totalTweets = Number(rows[0]?.count) || 0;
     const totalPages = Math.ceil(totalTweets / limit);
     
     const offset = (page - 1) * limit;
@@ -116,21 +114,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet> {
-    const [newTweet] = await db
-      .insert(tweets)
-      .values(tweet)
-      .returning();
-    
-    return newTweet;
+    try {
+      const [newTweet] = await db
+        .insert(tweets)
+        .values(tweet)
+        .returning();
+      
+      return newTweet;
+    } catch (error) {
+      // Handle duplicate key error (for sample tweets)
+      if (error instanceof Error && error.message.includes('duplicate key')) {
+        // Return the existing tweet
+        const [existingTweet] = await db
+          .select()
+          .from(tweets)
+          .where(eq(tweets.tweetId, tweet.tweetId));
+        
+        return existingTweet;
+      }
+      throw error;
+    }
   }
 
   async getTweetCount(): Promise<number> {
-    const [result] = await db
-      .select({ count: tweets.id })
-      .from(tweets)
-      .$dynamic();
-    
-    return Number(result?.count) || 0;
+    const { rows } = await db.$client.query('SELECT COUNT(*) as count FROM tweets');
+    return Number(rows[0]?.count) || 0;
   }
 }
 
