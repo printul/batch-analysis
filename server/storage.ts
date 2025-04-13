@@ -229,6 +229,7 @@ export class DatabaseStorage implements IStorage {
     // Remove @ prefix if present
     const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
     
+    // Use case-insensitive search with ilike
     return db
       .select()
       .from(tweets)

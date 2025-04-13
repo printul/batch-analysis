@@ -673,8 +673,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the tweets for this username
       let tweets = await storage.getTweetsByUsername(cleanUsername, 20);
       
-      // If no tweets found, try to fetch them first (if Twitter client is available)
-      if ((!tweets || tweets.length === 0) && twitterClient) {
+      // If no tweets found or we have tweets but the account exists in our system and hasn't been updated with tweets,
+      // try to fetch them first (if Twitter client is available)
+      const accountExists = await storage.getTwitterAccountByUsername(cleanUsername);
+      const shouldFetchTweets = (!tweets || tweets.length === 0 || (accountExists && !accountExists.last_fetched));
+      
+      if (shouldFetchTweets && twitterClient) {
         try {
           console.log(`No tweets found for ${cleanUsername}, attempting to fetch them now...`);
           
