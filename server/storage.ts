@@ -1,4 +1,4 @@
-import { users, tweets, type User, type InsertUser, type Tweet } from "@shared/schema";
+import { users, tweets, twitterAccounts, type User, type InsertUser, type Tweet, type TwitterAccount, type InsertTwitterAccount } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
@@ -16,6 +16,14 @@ export interface IStorage {
   getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }>;
   saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet>;
   getTweetCount(): Promise<number>;
+  
+  // Twitter account operations
+  getAllTwitterAccounts(): Promise<TwitterAccount[]>;
+  getTwitterAccount(id: number): Promise<TwitterAccount | undefined>;
+  getTwitterAccountByUsername(username: string): Promise<TwitterAccount | undefined>;
+  createTwitterAccount(account: InsertTwitterAccount): Promise<TwitterAccount>;
+  deleteTwitterAccount(id: number): Promise<boolean>;
+  updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -139,6 +147,58 @@ export class DatabaseStorage implements IStorage {
   async getTweetCount(): Promise<number> {
     const { rows } = await db.$client.query('SELECT COUNT(*) as count FROM tweets');
     return Number(rows[0]?.count) || 0;
+  }
+  
+  // Twitter account operations
+  async getAllTwitterAccounts(): Promise<TwitterAccount[]> {
+    return db.select().from(twitterAccounts).orderBy(twitterAccounts.username);
+  }
+  
+  async getTwitterAccount(id: number): Promise<TwitterAccount | undefined> {
+    const [account] = await db.select().from(twitterAccounts).where(eq(twitterAccounts.id, id));
+    return account;
+  }
+  
+  async getTwitterAccountByUsername(username: string): Promise<TwitterAccount | undefined> {
+    const [account] = await db.select().from(twitterAccounts).where(eq(twitterAccounts.username, username));
+    return account;
+  }
+  
+  async createTwitterAccount(account: InsertTwitterAccount): Promise<TwitterAccount> {
+    try {
+      const [newAccount] = await db
+        .insert(twitterAccounts)
+        .values(account)
+        .returning();
+      
+      return newAccount;
+    } catch (error) {
+      // Handle duplicate username
+      if (error instanceof Error && error.message.includes('duplicate key')) {
+        const [existingAccount] = await db
+          .select()
+          .from(twitterAccounts)
+          .where(eq(twitterAccounts.username, account.username));
+        
+        return existingAccount;
+      }
+      throw error;
+    }
+  }
+  
+  async deleteTwitterAccount(id: number): Promise<boolean> {
+    const result = await db.delete(twitterAccounts).where(eq(twitterAccounts.id, id)).returning();
+    return result.length > 0;
+  }
+  
+  async updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined> {
+    const [updated] = await db
+      .update(twitterAccounts)
+      .set({ lastFetched })
+      .where(eq(twitterAccounts.id, id))
+      .returning();
+    
+    return updated;
   }
 }
 

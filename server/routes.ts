@@ -35,7 +35,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize Twitter client (if environment variables are available)
   let twitterClient;
-  if (process.env.TWITTER_API_KEY && 
+  
+  // Prefer Bearer Token if available (better rate limits)
+  if (process.env.TWITTER_BEARER_TOKEN) {
+    twitterClient = new TwitterApi(process.env.TWITTER_BEARER_TOKEN);
+    console.log('Twitter client configured successfully with Bearer Token');
+  } 
+  // Fall back to OAuth 1.0a if Bearer Token is not available
+  else if (process.env.TWITTER_API_KEY && 
       process.env.TWITTER_API_SECRET && 
       process.env.TWITTER_ACCESS_TOKEN && 
       process.env.TWITTER_ACCESS_SECRET) {
