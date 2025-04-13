@@ -71,11 +71,7 @@ export default function TwitterAccountsList({ isAdmin }: TwitterAccountsListProp
   // Add Twitter account mutation
   const addAccountMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      return apiRequest<any>('/api/twitter-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      return apiRequest('POST', '/api/twitter-accounts', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/twitter-accounts'] });
@@ -98,9 +94,7 @@ export default function TwitterAccountsList({ isAdmin }: TwitterAccountsListProp
   // Delete Twitter account mutation
   const deleteAccountMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest<any>(`/api/twitter-accounts/${id}`, {
-        method: 'DELETE',
-      });
+      return apiRequest('DELETE', `/api/twitter-accounts/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/twitter-accounts'] });
@@ -123,9 +117,7 @@ export default function TwitterAccountsList({ isAdmin }: TwitterAccountsListProp
   // Manual fetch tweets mutation
   const fetchTweetsMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest<any>('/api/fetch-tweets', {
-        method: 'POST',
-      });
+      return apiRequest('POST', '/api/fetch-tweets');
     },
     onSuccess: () => {
       toast({

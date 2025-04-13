@@ -6,6 +6,7 @@ import Footer from "@/components/footer";
 import TabNavigation from "@/components/tab-navigation";
 import TweetsList from "@/components/tweets-list";
 import UsersList from "@/components/users-list";
+import TwitterAccountsList from "@/components/twitter-accounts-list";
 import AddUserModal from "@/components/add-user-modal";
 import DeleteConfirmModal from "@/components/delete-confirm-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -21,13 +22,21 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
-  const [activeTab, setActiveTab] = useState<'tweets' | 'admin'>('tweets');
+  const [activeTab, setActiveTab] = useState<'tweets' | 'accounts' | 'admin'>('tweets');
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   
+  interface AuthData {
+    user: {
+      id: number;
+      username: string;
+      isAdmin: boolean;
+    }
+  }
+  
   // Check if user is authenticated
-  const { data: authData, isLoading, error } = useQuery({
+  const { data: authData, isLoading, error } = useQuery<AuthData>({
     queryKey: ['/api/me'],
   });
   
@@ -58,11 +67,12 @@ export default function Dashboard() {
     return null;
   }
   
-  const isAdmin = authData.user.isAdmin;
+  const userData = authData.user || { id: 0, username: '', isAdmin: false };
+  const isAdmin = userData.isAdmin;
   
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <Header user={authData.user} />
+      <Header user={userData} />
       
       <TabNavigation 
         activeTab={activeTab}
@@ -74,11 +84,13 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {activeTab === 'tweets' ? (
             <TweetsList />
+          ) : activeTab === 'accounts' ? (
+            <TwitterAccountsList isAdmin={isAdmin} />
           ) : (
             <UsersList 
               onAddUser={() => setIsAddUserModalOpen(true)}
               onDeleteUser={handleDeleteUser}
-              currentUserId={authData.user.id}
+              currentUserId={userData.id}
             />
           )}
         </div>
