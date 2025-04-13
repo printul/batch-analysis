@@ -670,12 +670,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(existingAnalysis);
       }
       
+      // First, check if the account exists in our system
+      const accountExists = await storage.getTwitterAccountByUsername(cleanUsername);
+      
       // Get the tweets for this username
       let tweets = await storage.getTweetsByUsername(cleanUsername, 20);
       
-      // If no tweets found or we have tweets but the account exists in our system and hasn't been updated with tweets,
-      // try to fetch them first (if Twitter client is available)
-      const accountExists = await storage.getTwitterAccountByUsername(cleanUsername);
+      // If the account exists in our system but no tweets found, create a placeholder analysis
+      if (accountExists && (!tweets || tweets.length === 0)) {
+        console.log(`Account ${cleanUsername} exists but no tweets found. Creating placeholder analysis.`);
+        
+        // Create a placeholder analysis
+        const placeholderAnalysis = await storage.saveTweetAnalysis({
+          username: cleanUsername,
+          summary: `Unable to analyze tweets for @${cleanUsername} due to Twitter API rate limits. Please try again later.`,
+          themes: ["No data available"],
+          sentimentScore: 3, // Neutral score
+          sentimentLabel: "neutral",
+          sentimentConfidence: 1.0,
+          topHashtags: [],
+          keyPhrases: ["Please try again later", "Twitter API rate limit"]
+        });
+        
+        return res.json(placeholderAnalysis);
+      }
+      
+      // If we don't have tweets and the Twitter client is available, try to fetch them
       const shouldFetchTweets = (!tweets || tweets.length === 0 || (accountExists && !accountExists.lastFetched));
       
       if (shouldFetchTweets && twitterClient) {
@@ -734,6 +754,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
         } catch (fetchError) {
           console.error(`Error fetching tweets for ${cleanUsername}:`, fetchError);
+          
+          // If it's a rate limit error but the account exists, use fallback analysis
+          if (fetchError.message && fetchError.message.includes('429') && accountExists) {
+            console.log(`Rate limit hit for ${cleanUsername} but account exists. Creating placeholder analysis.`);
+            
+            // Create a placeholder analysis
+            const placeholderAnalysis = await storage.saveTweetAnalysis({
+              username: cleanUsername,
+              summary: `Unable to analyze tweets for @${cleanUsername} due to Twitter API rate limits. Please try again later.`,
+              themes: ["No data available"],
+              sentimentScore: 3, // Neutral score
+              sentimentLabel: "neutral",
+              sentimentConfidence: 1.0,
+              topHashtags: [],
+              keyPhrases: ["Please try again later", "Twitter API rate limit"]
+            });
+            
+            return res.json(placeholderAnalysis);
+          }
+          
+          // For other errors or non-existing accounts, return the error
           return res.status(429).json({ 
             error: 'Unable to fetch tweets due to Twitter API rate limits. Please try a different username or try again later.',
             details: fetchError.message
@@ -741,35 +782,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // If still no tweets, but the account exists in our database,
-      // continue with an empty analysis rather than returning an error
-      if ((!tweets || tweets.length === 0) && accountExists) {
-        console.log(`No tweets available for ${cleanUsername}, creating placeholder analysis`);
-        
-        // Create a placeholder analysis
-        const placeholderAnalysis = await storage.saveTweetAnalysis({
-          username: cleanUsername,
-          summary: `Unable to analyze tweets for @${cleanUsername} due to Twitter API rate limits. Please try again later.`,
-          themes: ["No data available"],
-          sentimentScore: 3, // Neutral score
-          sentimentLabel: "neutral",
-          sentimentConfidence: 1.0,
-          topHashtags: [],
-          keyPhrases: ["Please try again later", "Twitter API rate limit"]
-        });
-        
-        // Add a note that this is a placeholder due to rate limits
-        placeholderAnalysis.summary = `Unable to analyze tweets for @${cleanUsername} due to Twitter API rate limits. Please try again later.`;
-        
-        // Return the placeholder analysis
-        return res.json(placeholderAnalysis);
-      }
-      
-      // For accounts not in our database, return a helpful error
+      // Check again if we still have no tweets after the fetch attempt
       if (!tweets || tweets.length === 0) {
-        return res.status(404).json({ 
-          error: `No tweets found for @${cleanUsername}. Please verify the username or try adding this account via the "Twitter Accounts" tab first.`
-        });
+        // Check once more if the account exists - it might have been added during the fetch attempt
+        const accountExistsNow = await storage.getTwitterAccountByUsername(cleanUsername);
+        
+        if (accountExistsNow) {
+          // If account exists but still no tweets, use placeholder
+          console.log(`Account ${cleanUsername} exists but no tweets found after fetch attempt. Creating placeholder analysis.`);
+          
+          // Create a placeholder analysis
+          const placeholderAnalysis = await storage.saveTweetAnalysis({
+            username: cleanUsername,
+            summary: `Unable to analyze tweets for @${cleanUsername} due to Twitter API rate limits. Please try again later.`,
+            themes: ["No data available"],
+            sentimentScore: 3, // Neutral score
+            sentimentLabel: "neutral",
+            sentimentConfidence: 1.0,
+            topHashtags: [],
+            keyPhrases: ["Please try again later", "Twitter API rate limit"]
+          });
+          
+          return res.json(placeholderAnalysis);
+        } else {
+          // For accounts not in our database, return a helpful error
+          return res.status(404).json({ 
+            error: `No tweets found for @${cleanUsername}. Please verify the username or try adding this account via the "Twitter Accounts" tab first.`
+          });
+        }
       }
       
       // Format tweets for analysis
