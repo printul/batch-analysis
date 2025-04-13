@@ -753,11 +753,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           tweets = await storage.getTweetsByUsername(cleanUsername, 20);
           
         } catch (fetchError) {
-          console.error(`Error fetching tweets for ${cleanUsername}:`, fetchError);
+          console.error(`Error fetching tweets for ${cleanUsername}:`, JSON.stringify(fetchError));
           
-          // If it's a rate limit error but the account exists, use fallback analysis
-          if (fetchError.message && fetchError.message.includes('429') && accountExists) {
-            console.log(`Rate limit hit for ${cleanUsername} but account exists. Creating placeholder analysis.`);
+          // Always create a placeholder analysis for accounts that exist in our database
+          if (accountExists) {
+            console.log(`Error fetching tweets for ${cleanUsername} but account exists. Creating placeholder analysis.`);
             
             // Create a placeholder analysis
             const placeholderAnalysis = await storage.saveTweetAnalysis({
@@ -774,10 +774,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.json(placeholderAnalysis);
           }
           
-          // For other errors or non-existing accounts, return the error
-          return res.status(429).json({ 
-            error: 'Unable to fetch tweets due to Twitter API rate limits. Please try a different username or try again later.',
-            details: fetchError.message
+          // For accounts not in our database, return the error
+          const errorMessage = fetchError.code === 429 ? 
+            'Twitter API rate limit reached. Please try again later.' : 
+            (fetchError.message || 'An error occurred while fetching tweets');
+            
+          return res.status(fetchError.code || 429).json({ 
+            error: errorMessage,
+            details: fetchError.message || 'Unknown error'
           });
         }
       }
