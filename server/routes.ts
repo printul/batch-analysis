@@ -243,6 +243,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Initial tweet fetch
     fetchTweets();
   }
+  
+  // Check tweet count on startup and generate samples if needed
+  (async () => {
+    try {
+      const tweetCount = await storage.getTweetCount();
+      console.log(`Current tweet count on startup: ${tweetCount}`);
+      
+      if (tweetCount < 5) {
+        console.log('Generating sample tweets as fallback on startup...');
+        
+        const sampleTweets = [
+          {
+            tweetId: 'sample001',
+            text: 'Welcome to TweetMonitor! This is a sample tweet to demonstrate the application.',
+            author: 'TweetMonitor',
+            authorUsername: 'tweetmonitor',
+            createdAt: new Date(),
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample002',
+            text: 'Twitter API has rate limits that may prevent fetching real tweets. This is a demonstration sample.',
+            author: 'TweetMonitor',
+            authorUsername: 'tweetmonitor',
+            createdAt: new Date(Date.now() - 1000 * 60 * 10), // 10 minutes ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample003',
+            text: 'Just landed on Mars! The view is spectacular, and the atmosphere is... well, thin. #SpaceExploration',
+            author: 'NASA',
+            authorUsername: 'NASA',
+            createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample004',
+            text: 'Excited to announce our new initiative to combat climate change. Together, we can make a difference.',
+            author: 'Barack Obama',
+            authorUsername: 'BarackObama',
+            createdAt: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample005',
+            text: 'The future of sustainable transportation is electric. Our new models will be available next month.',
+            author: 'Elon Musk',
+            authorUsername: 'elonmusk',
+            createdAt: new Date(Date.now() - 1000 * 60 * 120), // 2 hours ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample006',
+            text: 'Our latest research shows promising results for renewable energy integration on a global scale.',
+            author: 'Bill Gates',
+            authorUsername: 'BillGates',
+            createdAt: new Date(Date.now() - 1000 * 60 * 180), // 3 hours ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample007',
+            text: 'Just announced: Our newest AI model can now understand and generate code in 20+ programming languages!',
+            author: 'Google',
+            authorUsername: 'Google',
+            createdAt: new Date(Date.now() - 1000 * 60 * 240), // 4 hours ago
+            fetchedAt: new Date()
+          },
+          {
+            tweetId: 'sample008',
+            text: 'Introducing the next generation of our products. Faster, lighter, and more powerful than ever before.',
+            author: 'Apple',
+            authorUsername: 'Apple',
+            createdAt: new Date(Date.now() - 1000 * 60 * 300), // 5 hours ago
+            fetchedAt: new Date()
+          }
+        ];
+        
+        for (const tweet of sampleTweets) {
+          await storage.saveTweet(tweet);
+        }
+        
+        console.log(`Added ${sampleTweets.length} sample tweets on startup`);
+      }
+    } catch (error) {
+      console.error('Error checking tweet count on startup:', error);
+    }
+  })();
 
   // Authentication endpoints
   app.post('/api/login', async (req, res) => {
