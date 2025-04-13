@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -29,6 +29,28 @@ export const twitterAccounts = pgTable("twitter_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// To store tweet analysis results
+export const tweetAnalysis = pgTable("tweet_analysis", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull(),
+  summary: text("summary"),
+  themes: text("themes").array(),
+  sentimentScore: integer("sentiment_score"),
+  sentimentLabel: text("sentiment_label"),
+  sentimentConfidence: doublePrecision("sentiment_confidence"),
+  topHashtags: text("top_hashtags").array(),
+  keyPhrases: text("key_phrases").array(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// To store search history
+export const searchHistory = pgTable("search_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  query: text("query").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -46,9 +68,15 @@ export const twitterAccountSchema = createInsertSchema(twitterAccounts).pick({
   name: true,
 });
 
+export const searchSchema = z.object({
+  query: z.string().min(1, "Search query is required"),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginUser = z.infer<typeof loginUserSchema>;
 export type TwitterAccount = typeof twitterAccounts.$inferSelect;
 export type InsertTwitterAccount = z.infer<typeof twitterAccountSchema>;
+export type TweetAnalysisRecord = typeof tweetAnalysis.$inferSelect;
+export type SearchHistoryRecord = typeof searchHistory.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Tweet = typeof tweets.$inferSelect;

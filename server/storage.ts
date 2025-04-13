@@ -16,6 +16,7 @@ export interface IStorage {
   getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }>;
   saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet>;
   getTweetCount(): Promise<number>;
+  getTweetsByUsername(username: string, limit?: number): Promise<Tweet[]>;
   
   // Twitter account operations
   getAllTwitterAccounts(): Promise<TwitterAccount[]>;
@@ -24,6 +25,24 @@ export interface IStorage {
   createTwitterAccount(account: InsertTwitterAccount): Promise<TwitterAccount>;
   deleteTwitterAccount(id: number): Promise<boolean>;
   updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined>;
+  
+  // Tweet analysis operations
+  saveTweetAnalysis(analysis: {
+    username: string;
+    summary: string;
+    themes: string[];
+    sentimentScore: number;
+    sentimentLabel: string;
+    sentimentConfidence: number;
+    topHashtags: string[];
+    keyPhrases: string[];
+  }): Promise<TweetAnalysisRecord>;
+  getTweetAnalysisByUsername(username: string): Promise<TweetAnalysisRecord | undefined>;
+  
+  // Search history operations
+  saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord>;
+  getRecentSearches(userId: number, limit?: number): Promise<SearchHistoryRecord[]>;
+  deleteSearchHistory(userId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
