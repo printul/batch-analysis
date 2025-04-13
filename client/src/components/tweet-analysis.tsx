@@ -55,16 +55,25 @@ export default function TweetAnalysis() {
         : data.username;
         
       // Make the API request
-      const response = await apiRequest<AnalysisData>(`/api/analyze/${cleanUsername}`);
-      return response;
+      const response = await fetch(`/api/analyze/${cleanUsername}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+      }
+      
+      return await response.json() as AnalysisData;
     },
-    onSuccess: (response: AnalysisData) => {
-      setUsername(response.username);
-      queryClient.invalidateQueries({ queryKey: [`/api/analyze/${response.username}`] });
+    onSuccess: (data: AnalysisData) => {
+      setUsername(data.username);
+      queryClient.invalidateQueries({ queryKey: [`/api/analyze/${data.username}`] });
       
       toast({
         title: "Analysis Complete",
-        description: `Successfully analyzed tweets for @${response.username}`,
+        description: `Successfully analyzed tweets for @${data.username}`,
       });
     },
     onError: (error: Error) => {
