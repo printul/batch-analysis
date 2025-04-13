@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 
 interface TabNavigationProps {
-  activeTab: 'tweets' | 'admin';
-  setActiveTab: (tab: 'tweets' | 'admin') => void;
+  activeTab: 'tweets' | 'accounts' | 'admin';
+  setActiveTab: (tab: 'tweets' | 'accounts' | 'admin') => void;
   isAdmin: boolean;
 }
 
@@ -21,6 +21,18 @@ export default function TabNavigation({ activeTab, setActiveTab, isAdmin }: TabN
             }`}
           >
             Twitter Timeline
+          </Button>
+          
+          <Button
+            variant="link"
+            onClick={() => setActiveTab('accounts')}
+            className={`px-1 py-4 text-sm font-medium border-b-2 ${
+              activeTab === 'accounts'
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+            }`}
+          >
+            Twitter Accounts
           </Button>
           
           {isAdmin && (

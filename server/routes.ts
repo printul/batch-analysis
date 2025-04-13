@@ -1,10 +1,10 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
-import { loginUserSchema, insertUserSchema } from "@shared/schema";
+import { loginUserSchema, insertUserSchema, twitterAccountSchema } from "@shared/schema";
 import NodeCron from "node-cron";
 
 declare module 'express-session' {
@@ -86,23 +86,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Fetching tweets...');
       
       try {
-        // Get a list of popular usernames to fetch tweets from (for demo purposes)
+        // First, try to get accounts from our database
+        const dbAccounts = await storage.getAllTwitterAccounts();
+        
+        // Use popular accounts as fallback if no accounts in database
         const popularUsernames = [
           'Twitter', 'NASA', 'POTUS', 'BarackObama', 'BillGates', 
           'elonmusk', 'Microsoft', 'Google', 'Apple'
         ];
         
-        // Select 3 random accounts
-        const selectedUsernames = popularUsernames
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 3);
+        let accountsToFetch = [];
         
-        console.log('Fetching tweets from popular accounts:', selectedUsernames.join(', '));
+        if (dbAccounts.length > 0) {
+          // Prioritize accounts from database
+          console.log(`Using ${dbAccounts.length} accounts from database`);
+          accountsToFetch = dbAccounts.map(account => account.username);
+        } else {
+          // Fallback to random popular accounts
+          accountsToFetch = popularUsernames
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 3);
+          console.log('No accounts in database, using popular accounts:', accountsToFetch.join(', '));
+        }
         
         let savedCount = 0;
         
         // Fetch tweets from each username
-        for (const username of selectedUsernames) {
+        for (const username of accountsToFetch) {
           try {
             // Find user by username 
             const userResponse = await twitterClient.v2.userByUsername(username, {
@@ -140,6 +150,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 fetchedAt: new Date()
               });
               savedCount++;
+            }
+            
+            // Update last fetched date for the account if it's in our database
+            const accountRecord = await storage.getTwitterAccountByUsername(username);
+            if (accountRecord) {
+              await storage.updateTwitterAccountLastFetched(accountRecord.id, new Date());
             }
             
             console.log(`Saved ${userTweets.data.data.length} tweets from ${username}`);
@@ -476,6 +492,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error('Error deleting user:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Twitter account management endpoints
+  app.get('/api/twitter-accounts', isAuthenticated, async (req, res) => {
+    try {
+      const accounts = await storage.getAllTwitterAccounts();
+      res.json(accounts);
+    } catch (error) {
+      console.error('Error fetching Twitter accounts:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/twitter-accounts', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const result = twitterAccountSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid request data' });
+      }
+      
+      const accountData = result.data;
+      
+      // Check if already exists
+      const existingAccount = await storage.getTwitterAccountByUsername(accountData.username);
+      if (existingAccount) {
+        return res.json({ 
+          success: true, 
+          account: existingAccount,
+          message: 'Account already exists'
+        });
+      }
+      
+      // Verify account exists on Twitter
+      try {
+        if (twitterClient) {
+          const userResponse = await twitterClient.v2.userByUsername(accountData.username, {
+            'user.fields': ['name', 'username', 'id'],
+          });
+          
+          if (userResponse && userResponse.data) {
+            // Use the official name if available
+            accountData.name = userResponse.data.name || accountData.username;
+          }
+        }
+      } catch (twitterError) {
+        console.log('Could not verify Twitter account:', twitterError.message);
+        // Continue anyway - we'll use the provided name
+      }
+      
+      const newAccount = await storage.createTwitterAccount(accountData);
+      
+      res.status(201).json({ 
+        success: true, 
+        account: newAccount
+      });
+    } catch (error) {
+      console.error('Error creating Twitter account:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.delete('/api/twitter-accounts/:id', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.id);
+      
+      // Check if account exists
+      const account = await storage.getTwitterAccount(accountId);
+      if (!account) {
+        return res.status(404).json({ error: 'Twitter account not found' });
+      }
+      
+      await storage.deleteTwitterAccount(accountId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting Twitter account:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/fetch-tweets', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // Manually trigger tweet fetching
+      fetchTweets()
+        .then(() => console.log('Manual tweet fetch completed'))
+        .catch(err => console.error('Error in manual tweet fetch:', err));
+      
+      res.json({ success: true, message: 'Tweet fetch initiated' });
+    } catch (error) {
+      console.error('Error initiating tweet fetch:', error);
       res.status(500).json({ error: 'Server error' });
     }
   });
