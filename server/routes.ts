@@ -894,6 +894,282 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Configure multer for file uploads
+  const uploadStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, 'uploads/documents');
+    },
+    filename: (req, file, cb) => {
+      // Create a unique filename with original extension
+      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `${uniqueName}${ext}`);
+    }
+  });
+
+  // File filter function to only allow PDFs and text files
+  const fileFilter = (req, file, cb) => {
+    // Accept pdfs, txt, doc, docx, and csv files
+    if (file.mimetype === 'application/pdf' || 
+        file.mimetype === 'text/plain' ||
+        file.mimetype === 'application/msword' ||
+        file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        file.mimetype === 'text/csv') {
+      cb(null, true);
+    } else {
+      cb(new Error('Unsupported file type! Only PDF, TXT, DOC, DOCX, and CSV files are allowed.'), false);
+    }
+  };
+
+  const upload = multer({ 
+    storage: uploadStorage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB max file size
+  });
+
+  // Document batch endpoints
+  app.post('/api/document-batches', isAuthenticated, async (req, res) => {
+    try {
+      const result = documentBatchSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid batch data' });
+      }
+      
+      const newBatch = await storage.createDocumentBatch({
+        ...result.data,
+        userId: req.session.user!.id
+      });
+      
+      res.status(201).json(newBatch);
+    } catch (error) {
+      console.error('Error creating document batch:', error);
+      res.status(500).json({ error: 'Failed to create document batch' });
+    }
+  });
+
+  app.get('/api/document-batches', isAuthenticated, async (req, res) => {
+    try {
+      const batches = await storage.getDocumentBatchesByUserId(req.session.user!.id);
+      res.json(batches);
+    } catch (error) {
+      console.error('Error fetching document batches:', error);
+      res.status(500).json({ error: 'Failed to fetch document batches' });
+    }
+  });
+
+  app.get('/api/document-batches/:id', isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const batch = await storage.getDocumentBatch(batchId);
+      
+      if (!batch) {
+        return res.status(404).json({ error: 'Document batch not found' });
+      }
+      
+      // Check if user owns this batch
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      // Get documents in this batch
+      const documents = await storage.getDocumentsByBatchId(batchId);
+      
+      // Get analysis if it exists
+      const analysis = await storage.getDocumentAnalysisByBatchId(batchId);
+      
+      res.json({
+        batch,
+        documents,
+        analysis
+      });
+    } catch (error) {
+      console.error('Error fetching document batch:', error);
+      res.status(500).json({ error: 'Failed to fetch document batch' });
+    }
+  });
+
+  app.delete('/api/document-batches/:id', isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const batch = await storage.getDocumentBatch(batchId);
+      
+      if (!batch) {
+        return res.status(404).json({ error: 'Document batch not found' });
+      }
+      
+      // Check if user owns this batch
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      // Get documents to delete files
+      const documents = await storage.getDocumentsByBatchId(batchId);
+      
+      // Delete the batch (this cascades to documents and analysis)
+      const deleted = await storage.deleteDocumentBatch(batchId);
+      
+      // Delete physical files
+      for (const doc of documents) {
+        if (doc.filePath) {
+          try {
+            fs.unlinkSync(doc.filePath);
+          } catch (fileError) {
+            console.error(`Error deleting file ${doc.filePath}:`, fileError);
+          }
+        }
+      }
+      
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error('Error deleting document batch:', error);
+      res.status(500).json({ error: 'Failed to delete document batch' });
+    }
+  });
+
+  // Document upload endpoints
+  app.post('/api/documents/upload', isAuthenticated, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+      
+      const batchId = parseInt(req.body.batchId);
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: 'Invalid batch ID' });
+      }
+      
+      // Check if batch exists and user has access to it
+      const batch = await storage.getDocumentBatch(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: 'Document batch not found' });
+      }
+      
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this batch' });
+      }
+      
+      // Determine file type
+      const fileType = path.extname(req.file.originalname).toLowerCase().substring(1);
+      
+      // Save document record
+      const document = await storage.saveDocument({
+        batchId,
+        filename: req.file.originalname,
+        fileType,
+        filePath: req.file.path
+      });
+      
+      // For text files, extract text immediately
+      if (fileType === 'txt' || fileType === 'csv') {
+        try {
+          const textContent = fs.readFileSync(req.file.path, 'utf8');
+          await storage.updateDocumentExtractedText(document.id, textContent);
+          document.extractedText = textContent;
+        } catch (extractError) {
+          console.error('Error extracting text from file:', extractError);
+        }
+      }
+      
+      // Extract text from PDF async (we'll implement this later)
+      if (fileType === 'pdf') {
+        // Will implement PDF text extraction in a separate function
+        try {
+          // We'll handle PDF extraction asynchronously
+          extractPdfText(document.id, req.file.path);
+        } catch (pdfError) {
+          console.error('Error starting PDF extraction:', pdfError);
+        }
+      }
+      
+      res.status(201).json(document);
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      res.status(500).json({ error: 'Failed to upload document' });
+    }
+  });
+
+  // Function to extract text from PDF
+  async function extractPdfText(documentId: number, filePath: string) {
+    try {
+      // Set the worker path
+      const pdfjsLib = await import('pdfjs-dist');
+      
+      // Load the PDF file
+      const data = new Uint8Array(fs.readFileSync(filePath));
+      const loadingTask = pdfjsLib.getDocument({ data });
+      const pdf = await loadingTask.promise;
+      
+      let extractedText = '';
+      
+      // Extract text from each page
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map((item: any) => item.str);
+        extractedText += strings.join(' ') + '\n';
+      }
+      
+      // Update the document with the extracted text
+      await storage.updateDocumentExtractedText(documentId, extractedText);
+      console.log(`Successfully extracted text from PDF document ID: ${documentId}`);
+    } catch (error) {
+      console.error(`Error extracting text from PDF (document ID: ${documentId}):`, error);
+    }
+  }
+
+  // Document analysis endpoint
+  app.post('/api/documents/analyze/:batchId', isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.batchId);
+      
+      // Validate batch exists and user has access
+      const batch = await storage.getDocumentBatch(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: 'Document batch not found' });
+      }
+      
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this batch' });
+      }
+      
+      // Get all documents in the batch
+      const documents = await storage.getDocumentsByBatchId(batchId);
+      if (documents.length === 0) {
+        return res.status(400).json({ error: 'No documents found in this batch' });
+      }
+      
+      // Check if documents have extracted text
+      const documentsWithText = documents.filter(doc => doc.extractedText);
+      if (documentsWithText.length === 0) {
+        return res.status(400).json({ error: 'No text extracted from documents yet. Please try again later.' });
+      }
+      
+      // Combine all document texts with clear separators
+      const combinedText = documentsWithText
+        .map(doc => `--- Document: ${doc.filename} ---\n${doc.extractedText}`)
+        .join('\n\n');
+      
+      // Call OpenAI for analysis (we'll implement this later)
+      // For now, return placeholder
+      const analysisResult = {
+        batchId,
+        summary: "Document analysis feature is being implemented",
+        themes: ["Implementation in progress"],
+        sentimentScore: 3,
+        sentimentLabel: "neutral",
+        keyPoints: ["Document analysis will be available soon"]
+      };
+      
+      // Save the analysis to the database
+      const savedAnalysis = await storage.saveDocumentAnalysis(analysisResult);
+      
+      res.json(savedAnalysis);
+    } catch (error) {
+      console.error('Error analyzing documents:', error);
+      res.status(500).json({ error: 'Failed to analyze documents' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
