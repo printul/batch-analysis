@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 
 interface TabNavigationProps {
-  activeTab: 'tweets' | 'accounts' | 'analysis' | 'admin';
-  setActiveTab: (tab: 'tweets' | 'accounts' | 'analysis' | 'admin') => void;
+  activeTab: 'documents' | 'batches' | 'analysis' | 'admin';
+  setActiveTab: (tab: 'documents' | 'batches' | 'analysis' | 'admin') => void;
   isAdmin: boolean;
 }
 
@@ -13,26 +13,26 @@ export default function TabNavigation({ activeTab, setActiveTab, isAdmin }: TabN
         <div className="flex space-x-8">
           <Button
             variant="link"
-            onClick={() => setActiveTab('tweets')}
+            onClick={() => setActiveTab('documents')}
             className={`px-1 py-4 text-sm font-medium border-b-2 ${
-              activeTab === 'tweets'
+              activeTab === 'documents'
                 ? 'border-primary text-primary' 
                 : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
             }`}
           >
-            Twitter Timeline
+            My Documents
           </Button>
           
           <Button
             variant="link"
-            onClick={() => setActiveTab('accounts')}
+            onClick={() => setActiveTab('batches')}
             className={`px-1 py-4 text-sm font-medium border-b-2 ${
-              activeTab === 'accounts'
+              activeTab === 'batches'
                 ? 'border-primary text-primary' 
                 : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
             }`}
           >
-            Twitter Accounts
+            Document Batches
           </Button>
           
           <Button
@@ -44,7 +44,7 @@ export default function TabNavigation({ activeTab, setActiveTab, isAdmin }: TabN
                 : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
             }`}
           >
-            Sentiment Analysis
+            Document Analysis
           </Button>
           
           {isAdmin && (
