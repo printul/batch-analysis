@@ -22,7 +22,7 @@ export async function apiRequest(
       },
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
-      mode: "same-origin" // Changed from "cors" to "same-origin" to fix webview issues
+      mode: "cors"
     });
 
     console.log(`Response status: ${res.status}, ${res.statusText}`);
@@ -48,7 +48,7 @@ export const getQueryFn: <T>(options: {
           "Accept": "application/json",
         },
         credentials: "include",
-        mode: "same-origin" // Changed from "cors" to "same-origin" to fix webview issues
+        mode: "cors"
       });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
