@@ -13,6 +13,7 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   try {
+    console.log(`Making ${method} request to ${url}`);
     const res = await fetch(url, {
       method,
       headers: {
@@ -21,9 +22,10 @@ export async function apiRequest(
       },
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
-      mode: "cors"
+      mode: "same-origin" // Changed from "cors" to "same-origin" to fix webview issues
     });
 
+    console.log(`Response status: ${res.status}, ${res.statusText}`);
     await throwIfResNotOk(res);
     return res;
   } catch (error) {
@@ -39,13 +41,14 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     try {
+      console.log(`Query fetching: ${queryKey[0]}`);
       const res = await fetch(queryKey[0] as string, {
         method: 'GET',
         headers: {
           "Accept": "application/json",
         },
         credentials: "include",
-        mode: "cors"
+        mode: "same-origin" // Changed from "cors" to "same-origin" to fix webview issues
       });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
