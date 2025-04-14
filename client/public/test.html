@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Test Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .success {
+      padding: 15px;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      border-radius: 4px;
+      color: #155724;
+      margin-bottom: 20px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #0066cc;
+    }
+    button {
+      background-color: #0066cc;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="success">
+    <h2>✅ Success!</h2>
+    <p>If you can see this page, static HTML routes are working correctly.</p>
+  </div>
+
+  <h1>Twitter Timeline Analysis App</h1>
+  
+  <div class="card">
+    <h3>Application Status</h3>
+    <p>The application server is running and serving static content.</p>
+    <p>Current time: <span id="current-time"></span></p>
+  </div>
+
+  <div class="card">
+    <h3>API Test</h3>
+    <p>Click the button below to test the API connection:</p>
+    <button id="test-button">Test API Connection</button>
+    <div id="api-result" style="margin-top: 10px;"></div>
+  </div>
+
+  <div class="card">
+    <h3>Next Steps</h3>
+    <p>If this page is working but the main application isn't, we can focus on using the static HTML alternatives for access:</p>
+    <ul>
+      <li><a href="/static/dashboard">Access the standalone dashboard</a></li>
+    </ul>
+  </div>
+
+  <script>
+    // Display current time
+    const timeElement = document.getElementById('current-time');
+    timeElement.textContent = new Date().toLocaleString();
+
+    // API test button
+    document.getElementById('test-button').addEventListener('click', async () => {
+      const resultElement = document.getElementById('api-result');
+      resultElement.textContent = "Testing API connection...";
+      resultElement.style.color = "blue";
+
+      try {
+        const response = await fetch('/api/health', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          resultElement.textContent = `Success! API responded with: ${JSON.stringify(data)}`;
+          resultElement.style.color = "green";
+        } else {
+          resultElement.textContent = `Error: API returned status ${response.status}`;
+          resultElement.style.color = "red";
+        }
+      } catch (error) {
+        resultElement.textContent = `Error: ${error.message}`;
+        resultElement.style.color = "red";
+      }
+    });
+  </script>
+</body>
+</html>

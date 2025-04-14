@@ -876,6 +876,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/static/dashboard', (req, res) => {
     res.sendFile('public/dashboard-standalone.html', { root: './client' });
   });
+  
+  app.get('/static/test', (req, res) => {
+    res.sendFile('public/test.html', { root: './client' });
+  });
+  
+  // Simple health check endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      time: new Date().toISOString(),
+      environment: process.env.NODE_ENV
+    });
+  });
 
   const httpServer = createServer(app);
 
