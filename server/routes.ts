@@ -6,7 +6,7 @@ import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
 import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema, documentBatchSchema } from "@shared/schema";
 import NodeCron from "node-cron";
-import { analyzeTweets } from "./openai";
+import { analyzeTweets, analyzeDocuments } from "./openai";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -1144,20 +1144,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'No text extracted from documents yet. Please try again later.' });
       }
       
-      // Combine all document texts with clear separators
-      const combinedText = documentsWithText
-        .map(doc => `--- Document: ${doc.filename} ---\n${doc.extractedText}`)
-        .join('\n\n');
+      // Format documents for analysis
+      const docsForAnalysis = documentsWithText.map(doc => ({
+        filename: doc.filename,
+        content: doc.extractedText || ''
+      }));
       
-      // Call OpenAI for analysis (we'll implement this later)
-      // For now, return placeholder
+      // Call OpenAI for analysis
+      const analysis = await analyzeDocuments(docsForAnalysis);
+      
+      // Map the OpenAI analysis result to our database schema
       const analysisResult = {
         batchId,
-        summary: "Document analysis feature is being implemented",
-        themes: ["Implementation in progress"],
-        sentimentScore: 3,
-        sentimentLabel: "neutral",
-        keyPoints: ["Document analysis will be available soon"]
+        summary: analysis.summary,
+        themes: analysis.themes,
+        tickers: analysis.tickers || [],
+        recommendations: analysis.recommendations || [],
+        sentimentScore: analysis.sentiment.score,
+        sentimentLabel: analysis.sentiment.label,
+        sentimentConfidence: analysis.sentiment.confidence,
+        sharedIdeas: analysis.sharedIdeas || [],
+        divergingIdeas: analysis.divergingIdeas || [],
+        keyPoints: analysis.keyPoints
       };
       
       // Save the analysis to the database
