@@ -4,9 +4,13 @@ import { storage } from "./storage";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
-import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema } from "@shared/schema";
+import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema, documentBatchSchema } from "@shared/schema";
 import NodeCron from "node-cron";
 import { analyzeTweets } from "./openai";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import * as pdfjs from "pdfjs-dist";
 
 declare module 'express-session' {
   interface SessionData {

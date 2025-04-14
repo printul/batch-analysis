@@ -1,7 +1,9 @@
 import { 
   users, tweets, twitterAccounts, tweetAnalysis, searchHistory,
+  documentBatches, documents, documentAnalysis,
   type User, type InsertUser, type Tweet, type TwitterAccount, 
-  type InsertTwitterAccount, type TweetAnalysisRecord, type SearchHistoryRecord 
+  type InsertTwitterAccount, type TweetAnalysisRecord, type SearchHistoryRecord,
+  type DocumentBatch, type InsertDocumentBatch, type Document, type DocumentAnalysisRecord
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -16,13 +18,13 @@ export interface IStorage {
   deleteUser(id: number): Promise<boolean>;
   validateUserCredentials(username: string, password: string): Promise<User | null>;
   
-  // Tweet operations
+  // Tweet operations (legacy)
   getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }>;
   saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet>;
   getTweetCount(): Promise<number>;
   getTweetsByUsername(username: string, limit?: number): Promise<Tweet[]>;
   
-  // Twitter account operations
+  // Twitter account operations (legacy)
   getAllTwitterAccounts(): Promise<TwitterAccount[]>;
   getTwitterAccount(id: number): Promise<TwitterAccount | undefined>;
   getTwitterAccountByUsername(username: string): Promise<TwitterAccount | undefined>;
@@ -30,7 +32,7 @@ export interface IStorage {
   deleteTwitterAccount(id: number): Promise<boolean>;
   updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined>;
   
-  // Tweet analysis operations
+  // Tweet analysis operations (legacy)
   saveTweetAnalysis(analysis: {
     username: string;
     summary: string;
@@ -42,6 +44,39 @@ export interface IStorage {
     keyPhrases: string[];
   }): Promise<TweetAnalysisRecord>;
   getTweetAnalysisByUsername(username: string): Promise<TweetAnalysisRecord | undefined>;
+  
+  // Document batch operations
+  createDocumentBatch(batch: InsertDocumentBatch & { userId: number }): Promise<DocumentBatch>;
+  getDocumentBatch(id: number): Promise<DocumentBatch | undefined>;
+  getDocumentBatchesByUserId(userId: number): Promise<DocumentBatch[]>;
+  deleteDocumentBatch(id: number): Promise<boolean>;
+  
+  // Document operations
+  saveDocument(document: { 
+    batchId: number;
+    filename: string;
+    fileType: string;
+    filePath: string;
+    extractedText?: string;
+  }): Promise<Document>;
+  getDocumentsByBatchId(batchId: number): Promise<Document[]>;
+  updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined>;
+  deleteDocument(id: number): Promise<boolean>;
+  
+  // Document analysis operations
+  saveDocumentAnalysis(analysis: {
+    batchId: number;
+    summary: string;
+    themes: string[];
+    tickers?: string[];
+    recommendations?: string[];
+    sentimentScore: number;
+    sentimentLabel: string;
+    sharedIdeas?: string[];
+    divergingIdeas?: string[];
+    keyPoints: string[];
+  }): Promise<DocumentAnalysisRecord>;
+  getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined>;
   
   // Search history operations
   saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord>;
@@ -331,6 +366,150 @@ export class DatabaseStorage implements IStorage {
       .returning();
       
     return result.length > 0;
+  }
+
+  // Document batch operations
+  async createDocumentBatch(batch: InsertDocumentBatch & { userId: number }): Promise<DocumentBatch> {
+    const [newBatch] = await db
+      .insert(documentBatches)
+      .values({
+        name: batch.name,
+        description: batch.description,
+        userId: batch.userId
+      })
+      .returning();
+    
+    return newBatch;
+  }
+
+  async getDocumentBatch(id: number): Promise<DocumentBatch | undefined> {
+    const [batch] = await db
+      .select()
+      .from(documentBatches)
+      .where(eq(documentBatches.id, id));
+    
+    return batch;
+  }
+
+  async getDocumentBatchesByUserId(userId: number): Promise<DocumentBatch[]> {
+    return db
+      .select()
+      .from(documentBatches)
+      .where(eq(documentBatches.userId, userId))
+      .orderBy(desc(documentBatches.createdAt));
+  }
+
+  async deleteDocumentBatch(id: number): Promise<boolean> {
+    // First delete all documents in the batch
+    await db
+      .delete(documents)
+      .where(eq(documents.batchId, id));
+    
+    // Then delete the batch analysis if it exists
+    await db
+      .delete(documentAnalysis)
+      .where(eq(documentAnalysis.batchId, id));
+    
+    // Finally delete the batch itself
+    const result = await db
+      .delete(documentBatches)
+      .where(eq(documentBatches.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
+  // Document operations
+  async saveDocument(document: { 
+    batchId: number;
+    filename: string;
+    fileType: string;
+    filePath: string;
+    extractedText?: string;
+  }): Promise<Document> {
+    const [newDocument] = await db
+      .insert(documents)
+      .values(document)
+      .returning();
+    
+    return newDocument;
+  }
+
+  async getDocumentsByBatchId(batchId: number): Promise<Document[]> {
+    return db
+      .select()
+      .from(documents)
+      .where(eq(documents.batchId, batchId))
+      .orderBy(documents.filename);
+  }
+
+  async updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined> {
+    const [updated] = await db
+      .update(documents)
+      .set({ extractedText })
+      .where(eq(documents.id, id))
+      .returning();
+    
+    return updated;
+  }
+
+  async deleteDocument(id: number): Promise<boolean> {
+    const result = await db
+      .delete(documents)
+      .where(eq(documents.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
+  // Document analysis operations
+  async saveDocumentAnalysis(analysis: {
+    batchId: number;
+    summary: string;
+    themes: string[];
+    tickers?: string[];
+    recommendations?: string[];
+    sentimentScore: number;
+    sentimentLabel: string;
+    sharedIdeas?: string[];
+    divergingIdeas?: string[];
+    keyPoints: string[];
+  }): Promise<DocumentAnalysisRecord> {
+    try {
+      // Check if analysis already exists for this batch
+      const existingAnalysis = await this.getDocumentAnalysisByBatchId(analysis.batchId);
+      
+      if (existingAnalysis) {
+        // Update the existing analysis
+        const [updated] = await db
+          .update(documentAnalysis)
+          .set(analysis)
+          .where(eq(documentAnalysis.batchId, analysis.batchId))
+          .returning();
+          
+        return updated;
+      } else {
+        // Create new analysis
+        const [newAnalysis] = await db
+          .insert(documentAnalysis)
+          .values(analysis)
+          .returning();
+          
+        return newAnalysis;
+      }
+    } catch (error) {
+      console.error('Error saving document analysis:', error);
+      throw error;
+    }
+  }
+
+  async getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined> {
+    const [analysis] = await db
+      .select()
+      .from(documentAnalysis)
+      .where(eq(documentAnalysis.batchId, batchId));
+      
+    return analysis;
   }
 }
 
