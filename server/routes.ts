@@ -26,10 +26,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     resave: false,
     saveUninitialized: false,
     cookie: { 
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Important: set to false for development
       maxAge: 86400000, // 24 hours
       httpOnly: true,
-      sameSite: 'lax' // For better CSRF protection
+      sameSite: 'none' // Changed from 'lax' to 'none' to work with CORS
     },
     store: new MemoryStoreSession({
       checkPeriod: 86400000 // prune expired entries every 24h

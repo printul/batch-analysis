@@ -6,11 +6,13 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import TestPage from "@/pages/test-page";
+import LandingPage from "@/pages/landing-page";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Login} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/test" component={TestPage} />
       <Route component={NotFound} />
