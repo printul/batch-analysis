@@ -573,7 +573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/search-history', isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user!.id;
+      const userId = req.session.user!.id;
       await storage.deleteSearchHistory(userId);
       
       res.json({ success: true });
@@ -874,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const newBatch = await storage.createDocumentBatch({
         ...result.data,
-        userId: req.user!.id
+        userId: req.session.user!.id
       });
       
       res.status(201).json(newBatch);
@@ -886,7 +886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches', isAuthenticated, async (req, res) => {
     try {
-      const batches = await storage.getDocumentBatchesByUserId(req.user!.id);
+      const batches = await storage.getDocumentBatchesByUserId(req.session.user!.id);
       res.json(batches);
     } catch (error) {
       console.error('Error fetching document batches:', error);
@@ -904,7 +904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user owns this batch
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
@@ -935,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user owns this batch
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
@@ -981,7 +981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
       
@@ -1065,7 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
       

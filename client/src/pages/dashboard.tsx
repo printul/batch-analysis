@@ -515,10 +515,38 @@ export default function Dashboard() {
             <Button 
               onClick={() => {
                 // Trigger analysis mutation
-                toast({
-                  title: "Analysis Started",
-                  description: "Document analysis has been initiated",
-                });
+                (async () => {
+                  try {
+                    const response = await fetch(`/api/document-batches/${batch.id}/analyze`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      credentials: 'include',
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to start analysis');
+                    }
+                    
+                    toast({
+                      title: "Analysis Started",
+                      description: "Document analysis has been initiated and may take a few moments to complete.",
+                    });
+                    
+                    // Invalidate batch query to refresh the data after a delay
+                    setTimeout(() => {
+                      queryClient.invalidateQueries({ queryKey: ['/api/document-batches', selectedBatchId] });
+                    }, 5000);
+                    
+                  } catch (error) {
+                    toast({
+                      title: "Analysis Failed",
+                      description: error instanceof Error ? error.message : "An error occurred during analysis",
+                      variant: "destructive",
+                    });
+                  }
+                })();
               }}
             >
               Analyze Documents
@@ -571,7 +599,45 @@ export default function Dashboard() {
             
             <div className="text-center py-6">
               <p className="text-gray-500 mb-4">This batch has not been analyzed yet</p>
-              <Button>Start Analysis</Button>
+              <Button 
+                onClick={() => {
+                  // Trigger analysis mutation
+                  (async () => {
+                    try {
+                      const response = await fetch(`/api/document-batches/${batch.id}/analyze`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        credentials: 'include',
+                      });
+                      
+                      if (!response.ok) {
+                        throw new Error('Failed to start analysis');
+                      }
+                      
+                      toast({
+                        title: "Analysis Started",
+                        description: "Document analysis has been initiated and may take a few moments to complete.",
+                      });
+                      
+                      // Invalidate batch query to refresh the data after a delay
+                      setTimeout(() => {
+                        queryClient.invalidateQueries({ queryKey: ['/api/document-batches', selectedBatchId] });
+                      }, 5000);
+                      
+                    } catch (error) {
+                      toast({
+                        title: "Analysis Failed",
+                        description: error instanceof Error ? error.message : "An error occurred during analysis",
+                        variant: "destructive",
+                      });
+                    }
+                  })();
+                }}
+              >
+                Start Analysis
+              </Button>
             </div>
           </div>
         ) : (
