@@ -27,7 +27,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     saveUninitialized: false,
     cookie: { 
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 86400000 // 24 hours
+      maxAge: 86400000, // 24 hours
+      httpOnly: true,
+      sameSite: 'lax' // For better CSRF protection
     },
     store: new MemoryStoreSession({
       checkPeriod: 86400000 // prune expired entries every 24h
