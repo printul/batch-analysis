@@ -863,6 +863,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Server error' });
     }
   });
+  
+  // Static HTML routes (for compatibility with webview)
+  app.get('/static', (req, res) => {
+    res.sendFile('public/index.html', { root: './client' });
+  });
+  
+  app.get('/static/login', (req, res) => {
+    res.sendFile('public/login-static.html', { root: './client' });
+  });
 
   const httpServer = createServer(app);
 
