@@ -5,7 +5,7 @@ import {
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { eq, desc, sql, ilike } from "drizzle-orm";
+import { eq, desc, sql, ilike, and, not, like } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -122,8 +122,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }> {
-    // Get total count using SQL
-    const { rows } = await db.$client.query('SELECT COUNT(*) as count FROM tweets');
+    // Filter out sample tweets
+    const { rows } = await db.$client.query("SELECT COUNT(*) as count FROM tweets WHERE tweet_id NOT LIKE 'sample%'");
     
     const totalTweets = Number(rows[0]?.count) || 0;
     const totalPages = Math.ceil(totalTweets / limit);
@@ -133,6 +133,11 @@ export class DatabaseStorage implements IStorage {
     const paginatedTweets = await db
       .select()
       .from(tweets)
+      .where(
+        and(
+          not(like(tweets.tweetId, 'sample%'))
+        )
+      )
       .orderBy(desc(tweets.createdAt))
       .limit(limit)
       .offset(offset);
@@ -229,11 +234,16 @@ export class DatabaseStorage implements IStorage {
     // Remove @ prefix if present
     const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
     
-    // Use case-insensitive search with ilike
+    // Use case-insensitive search with ilike and filter out sample tweets
     return db
       .select()
       .from(tweets)
-      .where(ilike(tweets.authorUsername, cleanUsername))
+      .where(
+        and(
+          ilike(tweets.authorUsername, cleanUsername),
+          not(like(tweets.tweetId, 'sample%'))
+        )
+      )
       .orderBy(desc(tweets.createdAt))
       .limit(limit);
   }
