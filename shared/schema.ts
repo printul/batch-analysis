@@ -43,6 +43,41 @@ export const tweetAnalysis = pgTable("tweet_analysis", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// New tables for document analysis
+export const documentBatches = pgTable("document_batches", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  userId: integer("user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  batchId: integer("batch_id").references(() => documentBatches.id),
+  filename: text("filename").notNull(),
+  fileType: text("file_type").notNull(),
+  filePath: text("file_path").notNull(),
+  extractedText: text("extracted_text"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const documentAnalysis = pgTable("document_analysis", {
+  id: serial("id").primaryKey(),
+  batchId: integer("batch_id").references(() => documentBatches.id),
+  summary: text("summary"),
+  themes: text("themes").array(),
+  tickers: text("tickers").array(),
+  recommendations: text("recommendations").array(),
+  sentimentScore: doublePrecision("sentiment_score"),
+  sentimentLabel: text("sentiment_label"),
+  sharedIdeas: text("shared_ideas").array(),
+  divergingIdeas: text("diverging_ideas").array(),
+  keyPoints: text("key_points").array(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
 // To store search history
 export const searchHistory = pgTable("search_history", {
   id: serial("id").primaryKey(),
@@ -72,6 +107,18 @@ export const searchSchema = z.object({
   query: z.string().min(1, "Search query is required"),
 });
 
+// Document batch schema for creation and validation
+export const documentBatchSchema = createInsertSchema(documentBatches).pick({
+  name: true,
+  description: true,
+});
+
+// Document upload schema
+export const documentUploadSchema = z.object({
+  batchId: z.number().positive("Batch ID is required"),
+  file: z.any(), // Will be handled by multer middleware
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginUser = z.infer<typeof loginUserSchema>;
 export type TwitterAccount = typeof twitterAccounts.$inferSelect;
@@ -80,3 +127,7 @@ export type TweetAnalysisRecord = typeof tweetAnalysis.$inferSelect;
 export type SearchHistoryRecord = typeof searchHistory.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Tweet = typeof tweets.$inferSelect;
+export type DocumentBatch = typeof documentBatches.$inferSelect;
+export type InsertDocumentBatch = z.infer<typeof documentBatchSchema>;
+export type Document = typeof documents.$inferSelect;
+export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
