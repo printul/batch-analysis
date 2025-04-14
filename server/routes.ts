@@ -872,6 +872,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/static/login', (req, res) => {
     res.sendFile('public/login-static.html', { root: './client' });
   });
+  
+  app.get('/static/dashboard', (req, res) => {
+    res.sendFile('public/dashboard-standalone.html', { root: './client' });
+  });
 
   const httpServer = createServer(app);
 
