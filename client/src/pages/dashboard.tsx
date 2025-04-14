@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "../lib/queryClient";
 import { useLocation } from "wouter";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
@@ -51,6 +52,150 @@ export type User = {
   isAdmin: boolean;
   createdAt: string;
 };
+
+// Types for document batches and analysis
+interface DocumentBatch {
+  id: number;
+  name: string;
+  description: string;
+  userId: number;
+  createdAt: string;
+  updatedAt: string;
+  documentCount?: number;
+}
+
+interface Document {
+  id: number;
+  batchId: number;
+  filename: string;
+  fileType: string;
+  filePath: string;
+  extractedText: string;
+  createdAt: string;
+}
+
+interface Analysis {
+  id: number;
+  batchId: number;
+  summary: string;
+  themes: string[];
+  tickers?: string[];
+  recommendations?: string[];
+  sentimentScore: number;
+  sentimentLabel: string;
+  sentimentConfidence?: number;
+  sharedIdeas?: string[];
+  divergingIdeas?: string[];
+  keyPoints: string[];
+  createdAt: string;
+}
+
+interface BatchesResponse {
+  batches: DocumentBatch[];
+}
+
+interface BatchDetailResponse {
+  batch: DocumentBatch;
+  documents: Document[];
+  analysis?: Analysis;
+}
+
+// Document Upload Form Component
+interface DocumentUploadFormProps {
+  batchId: number | null;
+  onSuccess: () => void;
+  onCancel: () => void;
+}
+
+function DocumentUploadForm({ batchId, onSuccess, onCancel }: DocumentUploadFormProps) {
+  const { toast } = useToast();
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  if (!batchId) {
+    return (
+      <div className="text-center py-6">
+        <p className="text-red-500 mb-4">No batch selected. Please select a batch first.</p>
+        <Button onClick={onCancel}>Close</Button>
+      </div>
+    );
+  }
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+    }
+  };
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!file) {
+      toast({
+        title: "Error",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsUploading(true);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('batchId', batchId.toString());
+    
+    try {
+      const response = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to upload document');
+      }
+      
+      // Invalidate the batch details query to refresh the documents list
+      queryClient.invalidateQueries({ queryKey: ['/api/document-batches', batchId] });
+      
+      onSuccess();
+    } catch (error) {
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "An error occurred during upload",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+  
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid gap-2">
+        <Label htmlFor="document-file">Select File</Label>
+        <Input 
+          id="document-file" 
+          type="file" 
+          onChange={handleFileChange}
+          className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary" 
+        />
+        <p className="text-xs text-gray-500">Supported formats: PDF, TXT, DOC, DOCX</p>
+      </div>
+      
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isUploading || !file}>
+          {isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Upload
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
 
 // Create Batch Form Component
 const batchFormSchema = z.object({
@@ -200,7 +345,7 @@ export default function Dashboard() {
   }, [authData, isLoading, setLocation, toast]);
   
   // Fetch document batches
-  const { data: batchesData, isLoading: isBatchesLoading } = useQuery({
+  const { data: batchesData, isLoading: isBatchesLoading } = useQuery<BatchesResponse>({
     queryKey: ['/api/document-batches'],
   });
   
@@ -333,7 +478,7 @@ export default function Dashboard() {
     }
     
     // Fetch analysis for selected batch
-    const { data: analysisData, isLoading: isAnalysisLoading } = useQuery({
+    const { data: analysisData, isLoading: isAnalysisLoading } = useQuery<BatchDetailResponse>({
       queryKey: ['/api/document-batches', selectedBatchId],
     });
     
@@ -486,24 +631,32 @@ export default function Dashboard() {
                   <div className="mb-6">
                     <h3 className="text-sm font-medium mb-2">Shared Ideas</h3>
                     <ul className="space-y-2">
-                      {analysis.sharedIdeas.map((idea: string, index: number) => (
-                        <li key={index} className="flex">
-                          <span className="mr-2 text-green-500">✓</span>
-                          <span>{idea}</span>
-                        </li>
-                      ))}
+                      {analysis.sharedIdeas && analysis.sharedIdeas.length > 0 ? (
+                        analysis.sharedIdeas.map((idea: string, index: number) => (
+                          <li key={index} className="flex">
+                            <span className="mr-2 text-green-500">✓</span>
+                            <span>{idea}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <p className="text-gray-500 text-sm">No shared ideas identified across documents</p>
+                      )}
                     </ul>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-medium mb-2">Diverging Viewpoints</h3>
                     <ul className="space-y-2">
-                      {analysis.divergingIdeas.map((idea: string, index: number) => (
-                        <li key={index} className="flex">
-                          <span className="mr-2 text-orange-500">⟳</span>
-                          <span>{idea}</span>
-                        </li>
-                      ))}
+                      {analysis.divergingIdeas && analysis.divergingIdeas.length > 0 ? (
+                        analysis.divergingIdeas.map((idea: string, index: number) => (
+                          <li key={index} className="flex">
+                            <span className="mr-2 text-orange-500">⟳</span>
+                            <span>{idea}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <p className="text-gray-500 text-sm">No diverging viewpoints identified across documents</p>
+                      )}
                     </ul>
                   </div>
                 </CardContent>
@@ -707,28 +860,17 @@ export default function Dashboard() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="document-file">Select File</Label>
-              <Input id="document-file" type="file" className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary" />
-              <p className="text-xs text-gray-500">Supported formats: PDF, TXT, DOC, DOCX</p>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsUploadDocumentModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => {
+          <DocumentUploadForm 
+            batchId={selectedBatchId}
+            onSuccess={() => {
               setIsUploadDocumentModalOpen(false);
               toast({
                 title: "Document Uploaded",
                 description: "Document has been uploaded and processed successfully",
               });
-            }}>
-              Upload
-            </Button>
-          </DialogFooter>
+            }}
+            onCancel={() => setIsUploadDocumentModalOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>
