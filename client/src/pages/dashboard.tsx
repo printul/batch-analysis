@@ -109,8 +109,10 @@ interface DocumentUploadFormProps {
 
 function DocumentUploadForm({ batchId, onSuccess, onCancel }: DocumentUploadFormProps) {
   const { toast } = useToast();
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<FileList | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
   
   if (!batchId) {
     return (
@@ -123,41 +125,58 @@ function DocumentUploadForm({ batchId, onSuccess, onCancel }: DocumentUploadForm
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      setFiles(e.target.files);
     }
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!file) {
+    if (!files || files.length === 0) {
       toast({
         title: "Error",
-        description: "Please select a file to upload",
+        description: "Please select at least one file to upload",
         variant: "destructive",
       });
       return;
     }
     
     setIsUploading(true);
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('batchId', batchId.toString());
+    setCurrentFileIndex(0);
+    setUploadProgress(0);
     
     try {
-      const response = await fetch('/api/documents/upload', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to upload document');
+      // Upload files one by one to show progress
+      for (let i = 0; i < files.length; i++) {
+        setCurrentFileIndex(i);
+        const file = files[i];
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('batchId', batchId.toString());
+        
+        const response = await fetch('/api/documents/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to upload ${file.name}: ${errorText}`);
+        }
+        
+        // Update progress
+        setUploadProgress(Math.round(((i + 1) / files.length) * 100));
       }
       
       // Invalidate the batch details query to refresh the documents list
       queryClient.invalidateQueries({ queryKey: ['/api/document-batches', batchId] });
+      
+      toast({
+        title: "Upload Complete",
+        description: `Successfully uploaded ${files.length} document${files.length !== 1 ? 's' : ''}`,
+      });
       
       onSuccess();
     } catch (error) {
@@ -174,23 +193,58 @@ function DocumentUploadForm({ batchId, onSuccess, onCancel }: DocumentUploadForm
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid gap-2">
-        <Label htmlFor="document-file">Select File</Label>
+        <Label htmlFor="document-file">Select Files</Label>
         <Input 
           id="document-file" 
           type="file" 
+          multiple
           onChange={handleFileChange}
           className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary" 
         />
         <p className="text-xs text-gray-500">Supported formats: PDF, TXT, DOC, DOCX</p>
+        
+        {files && files.length > 0 && (
+          <div className="mt-2">
+            <p className="text-sm text-gray-700 mb-1">{files.length} file{files.length !== 1 ? 's' : ''} selected</p>
+            <ul className="text-xs text-gray-500 list-disc pl-5 max-h-24 overflow-auto">
+              {Array.from(files).map((file, index) => (
+                <li key={index} className={isUploading && index === currentFileIndex ? "font-medium text-primary" : ""}>
+                  {file.name} ({Math.round(file.size / 1024)} KB)
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {isUploading && (
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Uploading {currentFileIndex + 1} of {files?.length}</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary" 
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
       </div>
       
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={isUploading}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isUploading || !file}>
-          {isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Upload
+        <Button type="submit" disabled={isUploading || !files || files.length === 0}>
+          {isUploading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            'Upload Files'
+          )}
         </Button>
       </DialogFooter>
     </form>
