@@ -1,0 +1,11 @@
+Test Document for OpenAI Analysis
+
+This document is being created to test the document analysis functionality. 
+
+Recent market news indicates that semiconductor stocks like NVDA and INTC have been volatile.
+Renewable energy companies like ENPH and FSLR are gaining momentum as climate initiatives advance.
+Financial experts suggest a diversified portfolio with exposure to both growth and value stocks.
+Some analysts believe AI companies will continue to outperform the broader market in 2025.
+However, others warn about potential regulatory challenges for large tech companies.
+
+Current market conditions suggest caution but selective investment opportunities remain.
