@@ -90,9 +90,8 @@ interface Analysis {
   createdAt: string;
 }
 
-interface BatchesResponse {
-  batches: DocumentBatch[];
-}
+// Direct array response from the API
+type BatchesResponse = DocumentBatch[];
 
 interface BatchDetailResponse {
   batch: DocumentBatch;
@@ -436,7 +435,7 @@ export default function Dashboard() {
       );
     }
     
-    const batches = batchesData?.batches || [];
+    const batches = batchesData || [];
     
     return (
       <div>
