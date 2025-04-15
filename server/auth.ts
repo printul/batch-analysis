@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
+import bcrypt from "bcryptjs";
 
 declare global {
   namespace Express {
@@ -24,16 +25,20 @@ async function hashPassword(password: string) {
 }
 
 async function comparePasswords(supplied: string, stored: string) {
-  // Check if stored password contains a salt
-  if (!stored.includes(".")) {
-    // Legacy password format without salt (just plain password)
+  // Check which password format is used
+  if (stored.startsWith("$2")) {
+    // This is a bcrypt hash
+    return bcrypt.compareSync(supplied, stored);
+  } else if (stored.includes(".")) {
+    // This is our scrypt hash with salt
+    const [hashed, salt] = stored.split(".");
+    const hashedBuf = Buffer.from(hashed, "hex");
+    const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+    return timingSafeEqual(hashedBuf, suppliedBuf);
+  } else {
+    // Legacy password format without any hashing (just plain text)
     return supplied === stored;
   }
-  
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
 }
 
 export function setupAuth(app: Express) {
