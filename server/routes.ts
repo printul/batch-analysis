@@ -1099,6 +1099,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // Debug endpoint to list all batches and documents (admin only)
+  app.get('/api/debug/batches', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // Get all batches and their documents
+      const batches = await storage.getDocumentBatchesByUserId(req.user!.id);
+      
+      const batchesWithDocs = await Promise.all(batches.map(async (batch) => {
+        const documents = await storage.getDocumentsByBatchId(batch.id);
+        return {
+          ...batch,
+          documentCount: documents.length,
+          documents: documents
+        };
+      }));
+      
+      res.json(batchesWithDocs);
+    } catch (error) {
+      console.error('Error fetching debug batch info:', error);
+      res.status(500).json({ error: 'Failed to fetch debug information' });
+    }
+  });
+  
   // Document analysis endpoint
   // Endpoint to analyze documents by batch ID
   app.post('/api/document-batches/:batchId/analyze', isAuthenticated, async (req, res) => {

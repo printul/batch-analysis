@@ -481,16 +481,27 @@ export default function Dashboard() {
                     <Upload className="h-4 w-4 mr-2" />
                     Upload
                   </Button>
-                  <Button 
-                    size="sm"
-                    onClick={() => {
-                      setSelectedBatchId(batch.id);
-                      setActiveTab('analysis');
-                    }}
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Analyze
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm"
+                      onClick={() => {
+                        setSelectedBatchId(batch.id);
+                        setActiveTab('analysis');
+                      }}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      Analyze
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => {
+                        setLocation(`/batch/${batch.id}`);
+                      }}
+                    >
+                      Details
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             ))}
@@ -503,11 +514,21 @@ export default function Dashboard() {
   // Always fetch analysis data if we have a selectedBatchId
   const { 
     data: analysisData, 
-    isLoading: isAnalysisLoading 
+    isLoading: isAnalysisLoading,
+    error: analysisError
   } = useQuery<BatchDetailResponse>({
     queryKey: ['/api/document-batches', selectedBatchId],
     // Only run the query if we have a selectedBatchId
     enabled: !!selectedBatchId,
+    retry: 3,
+    onError: (error) => {
+      console.error("Error fetching batch details:", error);
+      toast({
+        title: "Error loading batch",
+        description: error instanceof Error ? error.message : "Failed to load batch details",
+        variant: "destructive",
+      });
+    }
   });
   
   // Document Analysis UI
