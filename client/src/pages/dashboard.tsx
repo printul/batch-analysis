@@ -535,18 +535,13 @@ export default function Dashboard() {
     isLoading: isAnalysisLoading,
     error: analysisError
   } = useQuery<BatchDetailResponse>({
-    queryKey: ['/api/document-batches', selectedBatchId],
+    queryKey: [`/api/document-batches/${selectedBatchId}`],
     // Only run the query if we have a selectedBatchId
     enabled: !!selectedBatchId,
     retry: 3,
-    onError: (error) => {
-      console.error("Error fetching batch details:", error);
-      toast({
-        title: "Error loading batch",
-        description: error instanceof Error ? error.message : "Failed to load batch details",
-        variant: "destructive",
-      });
-    }
+    refetchOnWindowFocus: false,
+    staleTime: 30000,
+    gcTime: 300000
   });
   
   // Document Analysis UI
@@ -702,7 +697,7 @@ export default function Dashboard() {
                       
                       // Invalidate batch query to refresh the data after a delay
                       setTimeout(() => {
-                        queryClient.invalidateQueries({ queryKey: ['/api/document-batches', selectedBatchId] });
+                        queryClient.invalidateQueries({ queryKey: [`/api/document-batches/${selectedBatchId}`] });
                       }, 5000);
                       
                     } catch (error) {
