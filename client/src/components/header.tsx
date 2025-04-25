@@ -8,16 +8,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/hooks/use-auth";
 
 interface HeaderProps {
-  user: {
-    username: string;
-    isAdmin: boolean;
-  };
+  user?: {
+    id?: number;
+    username?: string;
+    isAdmin?: boolean;
+  } | null;
 }
 
 export default function Header({ user }: HeaderProps) {
@@ -25,13 +27,15 @@ export default function Header({ user }: HeaderProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const auth = useAuth();
   
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("GET", "/api/logout", undefined);
-      return response.json();
+      const response = await apiRequest("POST", "/api/logout", undefined);
+      return response;
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/me'] });
       toast({
         title: "Logged out",
         description: "You have been successfully logged out",
@@ -48,8 +52,13 @@ export default function Header({ user }: HeaderProps) {
   });
   
   const handleLogout = () => {
-    logoutMutation.mutate();
+    auth.logoutMutation.mutate();
   };
+  
+  // Use user from props if provided, otherwise use from auth context
+  const userData = user || auth.user;
+  const username = userData?.username || 'User';
+  const userInitial = username && username.length > 0 ? username.charAt(0).toUpperCase() : 'U';
   
   return (
     <header className="bg-white shadow-sm">
@@ -60,20 +69,20 @@ export default function Header({ user }: HeaderProps) {
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary mr-2">
                 <path d="m6 9 6 6 6-6"/>
               </svg>
-              <span className="font-bold text-xl text-gray-800">TweetMonitor</span>
+              <span className="font-bold text-xl text-gray-800">Document Analyzer</span>
             </div>
           </div>
           
           <div className="flex items-center">
             <div className="hidden md:ml-4 md:flex-shrink-0 md:flex md:items-center">
               <div className="flex items-center">
-                <span className="text-sm font-medium text-gray-600 mr-2">{user.username}</span>
+                <span className="text-sm font-medium text-gray-600 mr-2">{username}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="rounded-full p-0 w-10 h-10">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="bg-gray-100 text-gray-600">
-                          {user.username.charAt(0).toUpperCase()}
+                          {userInitial}
                         </AvatarFallback>
                       </Avatar>
                     </Button>
