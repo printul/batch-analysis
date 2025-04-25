@@ -97,38 +97,78 @@ export async function analyzeDocuments(documents: {
   ).join("\n\n");
 
   try {
-    const systemPrompt = `You are a financial document analyst. Analyze multiple documents to identify themes, financial tickers, sentiment, 
-    and key points. Extract shared and diverging ideas when multiple documents are provided. Always respond in valid JSON format.`;
+    const systemPrompt = `You are a professional financial document analyst with expertise in financial markets, investment strategies, and economic analysis. 
+    Your task is to thoroughly analyze multiple financial documents to extract detailed insights including financial themes, market sectors, specific securities (tickers), 
+    sentiment analysis, and both shared and diverging perspectives across documents. Always respond in valid JSON format with structured, detailed financial insights.`;
     
     const userPrompt = `
-    Analyze the following financial document content to identify patterns, insights, and recommendations:
+    Analyze the following financial document content to identify detailed financial insights, market trends, specific securities mentioned, and investment considerations:
     
     ${combinedText}
     
-    Provide your analysis in the following JSON format:
+    Provide your comprehensive financial analysis in the following JSON format:
     {
-      "summary": "A concise 3-5 sentence summary of the overall content",
-      "themes": ["Theme 1", "Theme 2", "Theme 3"],
-      "tickers": ["TICKER1", "TICKER2", "TICKER3"],
-      "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
+      "summary": "A detailed 4-6 sentence executive summary covering the key financial insights from all documents, mentioning specific sectors, market conditions, and notable securities when relevant",
+      
+      "themes": ["Major Financial Theme 1", "Major Financial Theme 2", "Major Financial Theme 3", "Major Financial Theme 4", "Major Financial Theme 5"],
+      
+      "tickers": ["TICKER1", "TICKER2", "TICKER3", "TICKER4", "TICKER5"],
+      
+      "recommendations": [
+        "Detailed investment consideration 1 with specific reasoning",
+        "Detailed investment consideration 2 with specific reasoning",
+        "Detailed investment consideration 3 with specific reasoning",
+        "Detailed investment consideration 4 with specific reasoning"
+      ],
+      
       "sentiment": {
-        "score": <number 1-5 where 1 is very negative, 3 is neutral, and 5 is very positive>,
-        "label": "<positive, negative, or neutral>",
+        "score": <number 1-5 where 1 is very bearish, 3 is neutral, and 5 is very bullish>,
+        "label": "<positive/bullish, negative/bearish, or neutral>",
         "confidence": <number 0-1 indicating confidence in sentiment analysis>
       },
-      "sharedIdeas": ["Shared idea 1", "Shared idea 2", "Shared idea 3"],
-      "divergingIdeas": ["Diverging idea 1", "Diverging idea 2", "Diverging idea 3"],
-      "keyPoints": ["Key point 1", "Key point 2", "Key point 3"]
+      
+      "sharedIdeas": [
+        "Common perspective 1 across documents with specific examples",
+        "Common perspective 2 across documents with specific examples",
+        "Common perspective 3 across documents with specific examples"
+      ],
+      
+      "divergingIdeas": [
+        "Contrasting viewpoint 1 with specific context from different documents",
+        "Contrasting viewpoint 2 with specific context from different documents",
+        "Contrasting viewpoint 3 with specific context from different documents"
+      ],
+      
+      "keyPoints": [
+        "Critical financial insight 1 with specific data points when available",
+        "Critical financial insight 2 with specific data points when available",
+        "Critical financial insight 3 with specific data points when available",
+        "Critical financial insight 4 with specific data points when available",
+        "Critical financial insight 5 with specific data points when available",
+        "Critical financial insight 6 with specific data points when available",
+        "Critical financial insight 7 with specific data points when available"
+      ]
     }
     
-    For themes, identify 3-5 recurring topics or subjects.
-    For tickers, extract any stock market ticker symbols (like AAPL, MSFT, TSLA).
-    For recommendations, identify 3-5 actionable recommendations.
-    For sharedIdeas, identify concepts common across documents.
-    For divergingIdeas, identify concepts where documents present different viewpoints.
-    For keyPoints, identify 5-7 important points.
+    Detailed Guidelines:
     
-    If any section is not applicable, provide an empty array.
+    1. For "summary", provide a professional executive summary that synthesizes the documents' financial content into a cohesive narrative, mentioning specific sectors, securities, and market conditions.
+    
+    2. For "themes", identify 4-6 major financial themes that appear throughout the documents. These should be specific to financial markets, economic sectors, or investment strategies (e.g., "Rising Inflation Concerns in Technology Sector" rather than just "Inflation").
+    
+    3. For "tickers", extract ALL stock market ticker symbols (like AAPL, MSFT, TSLA, NVDA, SPY, QQQ) that appear in the documents. Include indices when mentioned (e.g., SPX, DJI). Don't limit to just 3-5 tickers.
+    
+    4. For "recommendations", provide 3-5 detailed, actionable investment considerations based on the document analysis. These should be specific rather than general, mentioning sectors, asset classes, or specific securities when appropriate.
+    
+    5. For "sentiment", analyze the overall market sentiment considering all documents together. The score should reflect the financial outlook (1=very bearish, 3=neutral, 5=very bullish).
+    
+    6. For "sharedIdeas", identify 3-5 substantive financial perspectives that appear consistently across documents. Include specific examples.
+    
+    7. For "divergingIdeas", identify 3-5 financial viewpoints where documents present different or contradictory positions. Include the specific context from different documents.
+    
+    8. For "keyPoints", identify 5-7 critical financial insights from the documents. These should be specific and highlight the most important financial information, including particular statistics, forecasts, or data points when available.
+    
+    If any section is not applicable (e.g., no tickers mentioned), provide an empty array.
     Return ONLY the JSON object, no additional explanation.`;
 
     const response = await openai.chat.completions.create({

@@ -512,107 +512,231 @@ export default function BatchDetailsPage() {
           </div>
         )}
         
-        {/* Analysis Results Section */}
+        {/* Enhanced Analysis Results Section */}
         {analysis && (
           <div className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Analysis Results</CardTitle>
-                <CardDescription>
-                  AI analysis of documents in this batch
-                  <span className="ml-2 text-xs text-gray-500">
-                    (Analyzed on {new Date(analysis.createdAt).toLocaleString()})
-                  </span>
-                </CardDescription>
+            <Card className="border-t-4 border-t-blue-500">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="flex items-center">
+                      <BarChart3 className="h-5 w-5 mr-2 text-blue-600" />
+                      Financial Document Analysis
+                    </CardTitle>
+                    <CardDescription>
+                      AI-powered cross-document financial insights
+                      <span className="ml-2 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                        Analyzed: {new Date(analysis.createdAt).toLocaleString()}
+                      </span>
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="bg-blue-50 border-blue-200">
+                    {documents.length} Document{documents.length !== 1 ? 's' : ''} Analyzed
+                  </Badge>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h3 className="text-md font-medium mb-2">Summary</h3>
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <p className="text-sm">{analysis.summary}</p>
+              
+              <CardContent className="space-y-6 pt-4">
+                {/* Executive Summary Section */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">Executive Summary</h3>
+                  </div>
+                  <div className="p-4 bg-white">
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-gray-800 leading-relaxed">{analysis.summary}</p>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h3 className="text-md font-medium mb-2">Themes</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.themes.map((theme, i) => (
-                        <Badge key={i} variant="outline" className="bg-blue-50 text-blue-700">
-                          {theme}
-                        </Badge>
-                      ))}
+                {/* Financial Metrics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  {/* Market Sentiment */}
+                  <div className="md:col-span-4 bg-white border rounded-lg overflow-hidden shadow-sm">
+                    <div className="p-4 border-b bg-gray-50">
+                      <h3 className="font-medium text-gray-800">Market Sentiment</h3>
+                    </div>
+                    <div className="p-4">
+                      {/* Sentiment Indicator */}
+                      <div className="flex flex-col items-center mb-3">
+                        <div className={`text-center px-3 py-2 rounded-md font-medium ${
+                          analysis.sentimentLabel === 'positive' ? 'bg-green-100 text-green-800' :
+                          analysis.sentimentLabel === 'negative' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        } w-full`}>
+                          <div className="text-xl uppercase">{analysis.sentimentLabel}</div>
+                          <div className="text-xs mt-1">Confidence: {Math.round(analysis.sentimentConfidence * 100)}%</div>
+                        </div>
+                      </div>
+                      
+                      {/* Sentiment Score Bar */}
+                      <div className="mt-4">
+                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                          <span>Bearish</span>
+                          <span>Neutral</span>
+                          <span>Bullish</span>
+                        </div>
+                        <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${
+                              analysis.sentimentScore >= 4 ? 'bg-green-500' :
+                              analysis.sentimentScore >= 3 ? 'bg-blue-500' :
+                              analysis.sentimentScore >= 2 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}
+                            style={{ width: `${(analysis.sentimentScore / 5) * 100}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-center mt-2 text-sm font-medium">
+                          Score: {analysis.sentimentScore}/5
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
-                  {analysis.tickers && analysis.tickers.length > 0 && (
-                    <div>
-                      <h3 className="text-md font-medium mb-2">Financial Tickers</h3>
+                  {/* Key Financial Tickers */}
+                  <div className="md:col-span-4 bg-white border rounded-lg overflow-hidden shadow-sm">
+                    <div className="p-4 border-b bg-gray-50">
+                      <h3 className="font-medium text-gray-800">Key Financial Tickers</h3>
+                    </div>
+                    <div className="p-4">
+                      {analysis.tickers && analysis.tickers.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            {analysis.tickers.map((ticker, i) => (
+                              <div key={i} className="flex items-center bg-green-50 border border-green-200 rounded-md px-3 py-1.5">
+                                <span className="font-mono font-bold text-green-700">${ticker}</span>
+                                {/* We could add price/performance data here in a real app */}
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            These securities were mentioned across the analyzed documents. 
+                            This is not investment advice.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">No specific tickers identified</p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Market Themes */}
+                  <div className="md:col-span-4 bg-white border rounded-lg overflow-hidden shadow-sm">
+                    <div className="p-4 border-b bg-gray-50">
+                      <h3 className="font-medium text-gray-800">Market Themes</h3>
+                    </div>
+                    <div className="p-4">
                       <div className="flex flex-wrap gap-2">
-                        {analysis.tickers.map((ticker, i) => (
-                          <Badge key={i} variant="outline" className="bg-green-50 text-green-700 font-mono">
-                            ${ticker}
+                        {analysis.themes.map((theme, i) => (
+                          <Badge key={i} variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-2 py-1">
+                            {theme}
                           </Badge>
                         ))}
                       </div>
                     </div>
-                  )}
-                  
-                  <div>
-                    <h3 className="text-md font-medium mb-2">Sentiment Analysis</h3>
-                    <div className="flex items-center space-x-4">
-                      <div className="bg-gray-100 p-2 rounded-md">
-                        <span className="font-semibold">{analysis.sentimentLabel.toUpperCase()}</span>
-                        <span className="ml-2 text-sm">
-                          (Score: {analysis.sentimentScore}/5, Confidence: {Math.round(analysis.sentimentConfidence * 100)}%)
-                        </span>
+                  </div>
+                </div>
+                
+                {/* Financial Insights */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Investment Recommendations */}
+                  {analysis.recommendations && analysis.recommendations.length > 0 && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Investment Considerations</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.recommendations.map((rec, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-xs font-bold text-blue-800">{i+1}</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{rec}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500 italic">
+                          These considerations are generated by AI based on document analysis. 
+                          Not financial advice.
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  {analysis.recommendations && analysis.recommendations.length > 0 && (
-                    <div>
-                      <h3 className="text-md font-medium mb-2">Recommendations</h3>
-                      <ul className="list-disc list-inside space-y-1">
-                        {analysis.recommendations.map((rec, i) => (
-                          <li key={i} className="text-sm">{rec}</li>
-                        ))}
-                      </ul>
-                    </div>
                   )}
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  {/* Consensus Views */}
                   {analysis.sharedIdeas && analysis.sharedIdeas.length > 0 && (
-                    <div>
-                      <h3 className="text-md font-medium mb-2">Shared Ideas</h3>
-                      <ul className="list-disc list-inside space-y-1">
-                        {analysis.sharedIdeas.map((idea, i) => (
-                          <li key={i} className="text-sm">{idea}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {analysis.divergingIdeas && analysis.divergingIdeas.length > 0 && (
-                    <div>
-                      <h3 className="text-md font-medium mb-2">Diverging Ideas</h3>
-                      <ul className="list-disc list-inside space-y-1">
-                        {analysis.divergingIdeas.map((idea, i) => (
-                          <li key={i} className="text-sm">{idea}</li>
-                        ))}
-                      </ul>
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Consensus Views</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.sharedIdeas.map((idea, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-green-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-green-800">✓</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{idea}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                   )}
                 </div>
                 
-                <div>
-                  <h3 className="text-md font-medium mb-2">Key Points</h3>
-                  <ul className="list-disc list-inside space-y-1">
-                    {analysis.keyPoints.map((point, i) => (
-                      <li key={i} className="text-sm">{point}</li>
-                    ))}
-                  </ul>
+                {/* Contrasting Perspectives and Key Points */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Contrasting Views */}
+                  {analysis.divergingIdeas && analysis.divergingIdeas.length > 0 && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Contrasting Perspectives</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.divergingIdeas.map((idea, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-amber-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-amber-800">!</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{idea}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Key Financial Insights */}
+                  <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                    <div className="p-4 border-b bg-gray-50">
+                      <h3 className="font-medium text-gray-800">Key Financial Insights</h3>
+                    </div>
+                    <div className="p-4">
+                      <ul className="space-y-2">
+                        {analysis.keyPoints.map((point, i) => (
+                          <li key={i} className="flex items-start">
+                            <div className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mr-2 mt-0.5">
+                              <span className="text-xs font-bold text-blue-800">{i+1}</span>
+                            </div>
+                            <span className="text-sm text-gray-700">{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Analysis Disclaimer */}
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-xs text-gray-500">
+                  <p className="font-medium mb-1">Analysis Disclaimer:</p>
+                  <p>This analysis is generated using AI models and should not be considered professional financial advice. 
+                  Always consult with qualified financial advisors before making investment decisions.
+                  {analysis.tickers && analysis.tickers.length > 0 && 
+                    `Securities mentioned (${analysis.tickers.join(', ')}) are for informational purposes only.`
+                  }</p>
                 </div>
               </CardContent>
             </Card>
