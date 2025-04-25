@@ -886,8 +886,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches', isAuthenticated, async (req, res) => {
     try {
-      const batches = await storage.getDocumentBatchesByUserId(req.user!.id);
-      res.json(batches);
+      // Get batches for the current user
+      let batches = await storage.getDocumentBatchesByUserId(req.user!.id);
+      
+      // Enhance batches with document counts
+      const enhancedBatches = await Promise.all(batches.map(async (batch) => {
+        const documents = await storage.getDocumentsByBatchId(batch.id);
+        return {
+          ...batch,
+          documentCount: documents.length
+        };
+      }));
+      
+      res.json(enhancedBatches);
     } catch (error) {
       console.error('Error fetching document batches:', error);
       res.status(500).json({ error: 'Failed to fetch document batches' });
@@ -1078,7 +1089,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Document analysis endpoint
-  app.post('/api/documents/analyze/:batchId', isAuthenticated, async (req, res) => {
+  // Endpoint to analyze documents by batch ID
+  app.post('/api/document-batches/:batchId/analyze', isAuthenticated, async (req, res) => {
     try {
       const batchId = parseInt(req.params.batchId);
       
