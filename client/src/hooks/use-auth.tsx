@@ -51,7 +51,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error(`Request failed with status ${res.status}`);
         }
         
-        return await res.json();
+        const data = await res.json();
+        console.log("Auth data received:", data);
+        
+        // Check if the response has a nested user property (from /api/me)
+        if (data && data.user) {
+          return data.user;
+        }
+        
+        // Or if it's a direct user object (from /api/user)
+        if (data && data.id) {
+          return data;
+        }
+        
+        console.error("Invalid user data format received:", data);
+        return null;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           // Query was cancelled, not an error

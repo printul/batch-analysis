@@ -36,7 +36,9 @@ interface BatchDetailResponse {
 }
 
 export default function BatchDetailsPage() {
-  const { user } = useAuth();
+  const { user, isLoading: userLoading } = useAuth();
+  
+  console.log("Auth state:", { user, userLoading });
   const [_, setLocation] = useLocation();
   const [match, params] = useRoute('/batch/:batchId');
   const { toast } = useToast();
@@ -49,16 +51,44 @@ export default function BatchDetailsPage() {
     }
   }, [user, setLocation]);
 
-  // Fetch batch details
+  // Fetch batch details with custom queryFn to ensure proper URL construction
   const { 
     data: batchData, 
     isLoading,
     error,
     refetch
   } = useQuery<BatchDetailResponse>({
-    queryKey: ['/api/document-batches', batchId],
+    queryKey: ['batchDetails', batchId],
     enabled: !!batchId,
     retry: 3,
+    queryFn: async () => {
+      if (!batchId) {
+        throw new Error("No batch ID provided");
+      }
+      
+      if (!user) {
+        throw new Error("Authentication required");
+      }
+      
+      console.log(`Fetching batch details for ID: ${batchId}, User: ${user.id} (${user.username})`);
+      const response = await fetch(`/api/document-batches/${batchId}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error response: ${response.status}`, errorText);
+        throw new Error(`Failed to load batch: ${response.status} ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log("Batch data received:", data);
+      return data;
+    },
     onError: (error) => {
       console.error("Error fetching batch details:", error);
       toast({
