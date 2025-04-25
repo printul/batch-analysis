@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, BarChart3, Trash2 } from "lucide-react";
+import { Loader2, ArrowLeft, BarChart3, Trash2, Pencil } from "lucide-react";
+import EditBatchModal from "@/components/edit-batch-modal";
 
 // Define types for the batch details response
 interface Document {
@@ -61,6 +62,9 @@ export default function BatchDetailsPage() {
   const [match, params] = useRoute('/batch/:batchId');
   const { toast } = useToast();
   const batchId = match ? parseInt(params.batchId) : null;
+  
+  // State for the edit batch modal
+  const [isEditBatchModalOpen, setIsEditBatchModalOpen] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -182,45 +186,54 @@ export default function BatchDetailsPage() {
                 <Badge className="mr-2">Batch ID: {batch.id}</Badge>
                 <Badge variant="outline">Created: {new Date(batch.createdAt).toLocaleDateString()}</Badge>
               </div>
-              <Button 
-                variant="destructive"
-                onClick={async () => {
-                  if (confirm(`Are you sure you want to delete the entire batch "${batch.name}" and all its documents? This cannot be undone.`)) {
-                    try {
-                      const response = await fetch(`/api/document-batches/${batch.id}`, {
-                        method: 'DELETE',
-                        credentials: 'include'
-                      });
-                      
-                      if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`Failed to delete batch: ${errorText}`);
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline"
+                  onClick={() => setIsEditBatchModalOpen(true)}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  variant="destructive"
+                  onClick={async () => {
+                    if (confirm(`Are you sure you want to delete the entire batch "${batch.name}" and all its documents? This cannot be undone.`)) {
+                      try {
+                        const response = await fetch(`/api/document-batches/${batch.id}`, {
+                          method: 'DELETE',
+                          credentials: 'include'
+                        });
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          throw new Error(`Failed to delete batch: ${errorText}`);
+                        }
+                        
+                        toast({
+                          title: "Batch deleted",
+                          description: "The batch and all its documents have been deleted successfully."
+                        });
+                        
+                        // Invalidate the batches query to ensure the dashboard updates
+                        queryClient.invalidateQueries({ queryKey: ['/api/document-batches'] });
+                        
+                        // Redirect to dashboard
+                        setLocation('/dashboard');
+                      } catch (error) {
+                        console.error("Error deleting batch:", error);
+                        toast({
+                          title: "Error deleting batch",
+                          description: error instanceof Error ? error.message : "An unknown error occurred",
+                          variant: "destructive"
+                        });
                       }
-                      
-                      toast({
-                        title: "Batch deleted",
-                        description: "The batch and all its documents have been deleted successfully."
-                      });
-                      
-                      // Invalidate the batches query to ensure the dashboard updates
-                      queryClient.invalidateQueries({ queryKey: ['/api/document-batches'] });
-                      
-                      // Redirect to dashboard
-                      setLocation('/dashboard');
-                    } catch (error) {
-                      console.error("Error deleting batch:", error);
-                      toast({
-                        title: "Error deleting batch",
-                        description: error instanceof Error ? error.message : "An unknown error occurred",
-                        variant: "destructive"
-                      });
                     }
-                  }
-                }}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Batch
-              </Button>
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Batch
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -613,6 +626,13 @@ export default function BatchDetailsPage() {
         )}
       </main>
       <Footer />
+      
+      {/* Edit Batch Modal */}
+      <EditBatchModal 
+        isOpen={isEditBatchModalOpen}
+        onClose={() => setIsEditBatchModalOpen(false)}
+        batch={batch}
+      />
     </div>
   );
 }
