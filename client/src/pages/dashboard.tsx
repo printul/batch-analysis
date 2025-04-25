@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "../lib/queryClient";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
 import TabNavigation from "@/components/tab-navigation";
@@ -373,29 +374,10 @@ export default function Dashboard() {
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [isUploadDocumentModalOpen, setIsUploadDocumentModalOpen] = useState(false);
   
-  interface AuthData {
-    user: {
-      id: number;
-      username: string;
-      isAdmin: boolean;
-    }
-  }
+  // Use the auth context instead of direct query
+  const { user, isLoading } = useAuth();
   
-  // Check if user is authenticated
-  const { data: authData, isLoading, error } = useQuery<AuthData>({
-    queryKey: ['/api/me'],
-  });
-  
-  useEffect(() => {
-    if (!isLoading && !authData) {
-      setLocation('/');
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to access the dashboard",
-        variant: "destructive",
-      });
-    }
-  }, [authData, isLoading, setLocation, toast]);
+  // The ProtectedRoute component now handles redirects if not authenticated
   
   // Fetch document batches
   const { data: batchesData, isLoading: isBatchesLoading } = useQuery<BatchesResponse>({
@@ -417,12 +399,12 @@ export default function Dashboard() {
     );
   }
   
-  // If not authenticated, the useEffect will redirect
-  if (!authData?.user) {
+  // User is guaranteed to exist due to ProtectedRoute component
+  if (!user) {
     return null;
   }
   
-  const userData = authData.user || { id: 0, username: '', isAdmin: false };
+  const userData = user;
   const isAdmin = userData.isAdmin;
   
   // Document Batches UI
