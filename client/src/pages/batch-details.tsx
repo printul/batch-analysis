@@ -87,7 +87,9 @@ export default function BatchDetailsPage() {
     );
   }
 
-  if (error || !batchData) {
+  if (error || !batchData || !batchData.batch) {
+    console.error("Batch data error:", error);
+    console.log("Batch data:", batchData);
     return (
       <div className="flex flex-col min-h-screen bg-gray-50">
         <Header user={user} />
@@ -103,7 +105,9 @@ export default function BatchDetailsPage() {
     );
   }
 
-  const { batch, documents } = batchData;
+  // Safely extract batch and documents
+  const batch = batchData.batch;
+  const documents = batchData.documents || [];
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
