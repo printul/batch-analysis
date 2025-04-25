@@ -518,6 +518,16 @@ export default function Dashboard() {
     );
   };
   
+  // Always fetch analysis data if we have a selectedBatchId
+  const { 
+    data: analysisData, 
+    isLoading: isAnalysisLoading 
+  } = useQuery<BatchDetailResponse>({
+    queryKey: ['/api/document-batches', selectedBatchId],
+    // Only run the query if we have a selectedBatchId
+    enabled: !!selectedBatchId,
+  });
+  
   // Document Analysis UI
   const renderDocumentAnalysis = () => {
     if (!selectedBatchId) {
@@ -529,11 +539,6 @@ export default function Dashboard() {
         </div>
       );
     }
-    
-    // Fetch analysis for selected batch
-    const { data: analysisData, isLoading: isAnalysisLoading } = useQuery<BatchDetailResponse>({
-      queryKey: ['/api/document-batches', selectedBatchId],
-    });
     
     if (isAnalysisLoading) {
       return (
