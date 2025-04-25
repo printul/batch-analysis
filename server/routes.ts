@@ -1117,29 +1117,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Simple text extraction or fallback message
       if (filePath.toLowerCase().endsWith('.pdf')) {
-        extractedText = `PDF content from ${path.basename(filePath)}. Text extraction in Node environment is limited without browser APIs.`;
-        
         try {
-          // Try to read the PDF content as text - may not be perfect but better than nothing
+          // Read the PDF file content
           const fileContent = fs.readFileSync(filePath);
-          const textChunks = [];
-          for (let i = 0; i < fileContent.length; i++) {
-            // Only get printable ASCII characters
-            if (fileContent[i] >= 32 && fileContent[i] <= 126) {
-              textChunks.push(String.fromCharCode(fileContent[i]));
-            } else if (fileContent[i] === 10 || fileContent[i] === 13) {
-              // Add newlines
-              textChunks.push('\n');
+          
+          // Check for binary PDF indicators
+          const isPDFBinary = () => {
+            // Convert first bytes to string to check for PDF header
+            const header = fileContent.slice(0, Math.min(50, fileContent.length)).toString('utf8');
+            return header.includes('%PDF') || header.includes('/Type /Catalog');
+          };
+          
+          if (isPDFBinary()) {
+            console.log(`Document ID ${documentId} appears to be a binary PDF.`);
+            // Handle binary PDF with a clear message
+            extractedText = `This appears to be a binary PDF file that cannot be displayed properly in text format. The document will still be used for analysis, but text preview may be limited.`;
+          } else {
+            // Proceed with text extraction for text-based PDFs
+            const textChunks = [];
+            for (let i = 0; i < fileContent.length; i++) {
+              // Only get printable ASCII characters
+              if (fileContent[i] >= 32 && fileContent[i] <= 126) {
+                textChunks.push(String.fromCharCode(fileContent[i]));
+              } else if (fileContent[i] === 10 || fileContent[i] === 13) {
+                // Add newlines
+                textChunks.push('\n');
+              }
+            }
+            
+            const rawText = textChunks.join('');
+            
+            // Check if the extracted text looks like binary PDF content
+            if (rawText.includes('/Type /Catalog') || rawText.includes('/Pages') || 
+                rawText.match(/\/[A-Z][a-z]+ /g)?.length > 10) {
+              // This is likely binary PDF content
+              console.log(`Document ID ${documentId} text extraction found binary PDF content.`);
+              extractedText = `This PDF file contains binary data that cannot be properly displayed as text. The document will still be used for analysis, but text preview is limited.`;
+            } else {
+              // Clean up the text by removing non-word sequences
+              extractedText = rawText
+                .replace(/[^\w\s.,;:!?'"()\[\]\{\}\/\\-]/g, ' ')
+                .replace(/\s+/g, ' ');
+              
+              // Final check for meaningless content
+              if (extractedText.trim().length < 100 || 
+                  extractedText.split(/\s+/).length < 20) {
+                extractedText = `The PDF file appears to contain minimal text content that could be extracted. This may be a scanned document or primarily image-based PDF.`;
+              }
             }
           }
-          
-          const rawText = textChunks.join('');
-          // Clean up the text by removing non-word sequences
-          extractedText = rawText
-            .replace(/[^\w\s.,;:!?'"()\[\]\{\}\/\\-]/g, ' ')
-            .replace(/\s+/g, ' ');
         } catch (err) {
-          console.error('Fallback text extraction failed:', err);
+          console.error('PDF text extraction failed:', err);
+          extractedText = `Error extracting text from PDF: ${err.message}`;
         }
       } else {
         extractedText = `Content from ${path.basename(filePath)}. File type not supported for direct text extraction.`;
@@ -1147,7 +1176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update the document with the extracted text
       await storage.updateDocumentExtractedText(documentId, extractedText);
-      console.log(`Successfully extracted text from PDF document ID: ${documentId}`);
+      console.log(`Text extraction completed for document ID: ${documentId}`);
     } catch (error) {
       console.error(`Error extracting text from PDF (document ID: ${documentId}):`, error);
     }
