@@ -30,9 +30,26 @@ interface Batch {
   createdAt: string;
 }
 
+interface Analysis {
+  id: number;
+  batchId: number;
+  summary: string;
+  themes: string[];
+  tickers?: string[];
+  recommendations?: string[];
+  sentimentScore: number;
+  sentimentLabel: string;
+  sentimentConfidence: number;
+  sharedIdeas?: string[];
+  divergingIdeas?: string[];
+  keyPoints: string[];
+  createdAt: string;
+}
+
 interface BatchDetailResponse {
   batch: Batch;
   documents: Document[];
+  analysis?: Analysis;
 }
 
 export default function BatchDetailsPage() {
@@ -135,9 +152,10 @@ export default function BatchDetailsPage() {
     );
   }
 
-  // Safely extract batch and documents
+  // Safely extract batch, documents and analysis
   const batch = batchData.batch;
   const documents = batchData.documents || [];
+  const analysis = batchData.analysis;
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -249,7 +267,115 @@ export default function BatchDetailsPage() {
           </div>
         )}
         
-        {documents.length > 0 && (
+        {/* Analysis Results Section */}
+        {analysis && (
+          <div className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Analysis Results</CardTitle>
+                <CardDescription>
+                  AI analysis of documents in this batch
+                  <span className="ml-2 text-xs text-gray-500">
+                    (Analyzed on {new Date(analysis.createdAt).toLocaleString()})
+                  </span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h3 className="text-md font-medium mb-2">Summary</h3>
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <p className="text-sm">{analysis.summary}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-md font-medium mb-2">Themes</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.themes.map((theme, i) => (
+                        <Badge key={i} variant="outline" className="bg-blue-50 text-blue-700">
+                          {theme}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {analysis.tickers && analysis.tickers.length > 0 && (
+                    <div>
+                      <h3 className="text-md font-medium mb-2">Financial Tickers</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.tickers.map((ticker, i) => (
+                          <Badge key={i} variant="outline" className="bg-green-50 text-green-700 font-mono">
+                            ${ticker}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <h3 className="text-md font-medium mb-2">Sentiment Analysis</h3>
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-gray-100 p-2 rounded-md">
+                        <span className="font-semibold">{analysis.sentimentLabel.toUpperCase()}</span>
+                        <span className="ml-2 text-sm">
+                          (Score: {analysis.sentimentScore}/5, Confidence: {Math.round(analysis.sentimentConfidence * 100)}%)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {analysis.recommendations && analysis.recommendations.length > 0 && (
+                    <div>
+                      <h3 className="text-md font-medium mb-2">Recommendations</h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        {analysis.recommendations.map((rec, i) => (
+                          <li key={i} className="text-sm">{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {analysis.sharedIdeas && analysis.sharedIdeas.length > 0 && (
+                    <div>
+                      <h3 className="text-md font-medium mb-2">Shared Ideas</h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        {analysis.sharedIdeas.map((idea, i) => (
+                          <li key={i} className="text-sm">{idea}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {analysis.divergingIdeas && analysis.divergingIdeas.length > 0 && (
+                    <div>
+                      <h3 className="text-md font-medium mb-2">Diverging Ideas</h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        {analysis.divergingIdeas.map((idea, i) => (
+                          <li key={i} className="text-sm">{idea}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                
+                <div>
+                  <h3 className="text-md font-medium mb-2">Key Points</h3>
+                  <ul className="list-disc list-inside space-y-1">
+                    {analysis.keyPoints.map((point, i) => (
+                      <li key={i} className="text-sm">{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        
+        {/* Analysis Button Section */}
+        {documents.length > 0 && !analysis && (
           <div className="mt-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -324,6 +450,79 @@ export default function BatchDetailsPage() {
                   <li>Overall sentiment analysis</li>
                   <li>Key recommendations</li>
                 </ul>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        
+        {/* Re-Analyze Button Section if analysis already exists */}
+        {documents.length > 0 && analysis && (
+          <div className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Re-analyze Documents</CardTitle>
+                  <CardDescription>Run a new AI analysis on all documents in this batch</CardDescription>
+                </div>
+                <Button 
+                  onClick={async () => {
+                    try {
+                      const hasExtractedText = documents.some(doc => doc.extractedText && doc.extractedText.trim());
+                      
+                      if (!hasExtractedText) {
+                        toast({
+                          title: "No text to analyze",
+                          description: "None of the documents in this batch have extracted text.",
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+                      
+                      toast({
+                        title: "Starting new analysis",
+                        description: "Re-analyzing documents in batch. This may take a moment...",
+                      });
+                      
+                      const response = await fetch(`/api/document-batches/${batchId}/analyze`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        credentials: 'include'
+                      });
+                      
+                      if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Analysis failed: ${errorText}`);
+                      }
+                      
+                      const result = await response.json();
+                      
+                      toast({
+                        title: "Analysis complete",
+                        description: "Document analysis has been completed successfully. Refreshing data...",
+                      });
+                      
+                      // Refresh the data
+                      refetch();
+                    } catch (error) {
+                      console.error("Error analyzing documents:", error);
+                      toast({
+                        title: "Analysis failed",
+                        description: error instanceof Error ? error.message : "An unknown error occurred",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Re-analyze
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600">
+                  This will create a new analysis of all documents in this batch, replacing the current analysis.
+                </p>
               </CardContent>
             </Card>
           </div>
