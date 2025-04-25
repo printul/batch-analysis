@@ -47,14 +47,61 @@ export async function analyzeDocuments(documents: {
     };
   }
 
+  // Truncate and prepare documents for analysis
+  const MAX_DOC_CHARS = 20000; // Maximum characters per document
+  const MAX_TOTAL_CHARS = 80000; // Maximum total characters for all documents
+  let totalChars = 0;
+  
+  // Process documents: truncate each document and track total size
+  const processedDocs = documents.map(doc => {
+    // Skip documents with binary content
+    if (doc.content.startsWith('%PDF') || doc.content.includes('/Type /Catalog')) {
+      return {
+        filename: doc.filename,
+        content: "PDF binary content - not suitable for text analysis",
+        truncated: true
+      };
+    }
+    
+    // Otherwise truncate if needed
+    const truncated = doc.content.length > MAX_DOC_CHARS;
+    const content = truncated ? doc.content.substring(0, MAX_DOC_CHARS) + "... [content truncated]" : doc.content;
+    
+    totalChars += content.length;
+    return { filename: doc.filename, content, truncated };
+  });
+  
+  // If total size is still too large, further reduce
+  let finalDocs = [...processedDocs];
+  if (totalChars > MAX_TOTAL_CHARS) {
+    console.log(`Document set exceeds maximum size (${totalChars}/${MAX_TOTAL_CHARS}), truncating...`);
+    
+    // Calculate how much we need to reduce each document
+    const reductionFactor = MAX_TOTAL_CHARS / totalChars;
+    totalChars = 0;
+    
+    finalDocs = processedDocs.map(doc => {
+      const newLength = Math.floor(doc.content.length * reductionFactor);
+      const truncated = true;
+      const content = doc.content.substring(0, newLength) + "... [content truncated]";
+      totalChars += content.length;
+      return { ...doc, content, truncated };
+    });
+  }
+  
+  console.log(`Processed ${documents.length} documents. Total size: ${totalChars} characters`);
+  
   // Format documents for analysis
-  const combinedText = documents.map(doc => 
-    `--- Document: ${doc.filename} ---\n${doc.content}`
+  const combinedText = finalDocs.map(doc => 
+    `--- Document: ${doc.filename} ${doc.truncated ? "(TRUNCATED)" : ""} ---\n${doc.content}`
   ).join("\n\n");
 
   try {
-    const prompt = `
-    Analyze the following document content:
+    const systemPrompt = `You are a financial document analyst. Analyze multiple documents to identify themes, financial tickers, sentiment, 
+    and key points. Extract shared and diverging ideas when multiple documents are provided. Always respond in valid JSON format.`;
+    
+    const userPrompt = `
+    Analyze the following financial document content to identify patterns, insights, and recommendations:
     
     ${combinedText}
     
@@ -74,22 +121,22 @@ export async function analyzeDocuments(documents: {
       "keyPoints": ["Key point 1", "Key point 2", "Key point 3"]
     }
     
-    Ensure the summary is insightful and captures the essence of the documents.
-    For themes, identify 3-5 recurring topics or subjects discussed across the documents.
-    For tickers, extract any stock market ticker symbols mentioned (like AAPL, MSFT, TSLA).
-    For recommendations, identify 3-5 actionable recommendations that can be derived from the content.
-    For sentiment, analyze the overall emotional tone of the documents.
-    For sharedIdeas, identify 3-5 concepts or ideas that are common across documents.
-    For divergingIdeas, identify 3-5 concepts or ideas where the documents present different viewpoints.
-    For keyPoints, identify 5-7 important points from the content.
+    For themes, identify 3-5 recurring topics or subjects.
+    For tickers, extract any stock market ticker symbols (like AAPL, MSFT, TSLA).
+    For recommendations, identify 3-5 actionable recommendations.
+    For sharedIdeas, identify concepts common across documents.
+    For divergingIdeas, identify concepts where documents present different viewpoints.
+    For keyPoints, identify 5-7 important points.
     
-    If any section is not applicable (e.g., no tickers mentioned), provide an empty array.
-    
-    Return ONLY the JSON object, with no additional explanation or text.`;
+    If any section is not applicable, provide an empty array.
+    Return ONLY the JSON object, no additional explanation.`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
       response_format: { type: "json_object" }
     });
 

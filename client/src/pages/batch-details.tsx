@@ -351,7 +351,19 @@ export default function BatchDetailsPage() {
                     <TabsContent key={doc.id} value={doc.id.toString()}>
                       <div className="border rounded-md p-4 bg-gray-50 overflow-auto max-h-96">
                         {doc.extractedText && doc.extractedText.trim() ? (
-                          <pre className="whitespace-pre-wrap font-mono text-sm">{doc.extractedText}</pre>
+                          <div>
+                            {doc.extractedText.startsWith('%PDF') || doc.extractedText.includes('/Type /Catalog') ? (
+                              <div className="p-4 bg-amber-50 border border-amber-200 rounded mb-4">
+                                <p className="text-amber-700 font-medium">This PDF contains binary data that cannot be displayed properly.</p>
+                                <p className="text-amber-600 text-sm mt-1">The text extraction process may need to be adjusted for this document type.</p>
+                              </div>
+                            ) : null}
+                            <pre className="whitespace-pre-wrap font-mono text-sm">
+                              {doc.extractedText.length > 10000 
+                                ? doc.extractedText.substring(0, 10000) + "... [Content truncated for display. Full text is available for analysis]" 
+                                : doc.extractedText}
+                            </pre>
+                          </div>
                         ) : (
                           <p className="text-gray-500 italic">No text has been extracted from this document yet</p>
                         )}
