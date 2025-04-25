@@ -907,8 +907,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches/:id', isAuthenticated, async (req, res) => {
     try {
+      console.log(`Getting batch with ID: ${req.params.id}`);
+      
       const batchId = parseInt(req.params.id);
+      if (isNaN(batchId)) {
+        console.error(`Invalid batch ID: ${req.params.id}`);
+        return res.status(400).json({ error: 'Invalid batch ID' });
+      }
+      
       const batch = await storage.getDocumentBatch(batchId);
+      console.log(`Batch found: ${!!batch}`);
       
       if (!batch) {
         return res.status(404).json({ error: 'Document batch not found' });
@@ -916,14 +924,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if user owns this batch
       if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+        console.error(`Access denied for user ${req.user!.id} to batch owned by ${batch.userId}`);
         return res.status(403).json({ error: 'Access denied' });
       }
       
       // Get documents in this batch
       const documents = await storage.getDocumentsByBatchId(batchId);
+      console.log(`Found ${documents.length} documents for batch ${batchId}`);
       
       // Get analysis if it exists
       const analysis = await storage.getDocumentAnalysisByBatchId(batchId);
+      console.log(`Analysis exists: ${!!analysis}`);
       
       res.json({
         batch,
