@@ -30,12 +30,14 @@ function countWords(text: string): number {
 
 // Function to generate a brief summary from document text
 function generateDocumentSummary(doc: any): React.ReactNode {
-  if (!doc.extractedText) return <p>No text content available</p>;
+  if (!doc || !doc.extractedText) return <p>No text content available</p>;
+  
+  const extractedText = doc.extractedText?.toString() || "";
   
   // Handle binary PDFs and poor quality extracts
-  if (doc.extractedText.startsWith('%PDF') || 
-      doc.extractedText.includes('/Type /Catalog') ||
-      doc.extractedText.length < 100) {
+  if (extractedText.startsWith('%PDF') || 
+      extractedText.includes('/Type /Catalog') ||
+      extractedText.length < 100) {
     return (
       <p className="italic text-gray-600">
         This document contains content that cannot be summarized. Please refer to the analysis section for insights.
@@ -43,60 +45,109 @@ function generateDocumentSummary(doc: any): React.ReactNode {
     );
   }
   
-  // Get the first few paragraphs or a character limit
-  const paragraphs = doc.extractedText
-    .split('\n')
-    .filter((p: string) => p.trim().length > 0)
-    .slice(0, 3);
+  try {
+    // Get the first few paragraphs or a character limit
+    const paragraphs = extractedText
+      .split('\n')
+      .filter((p: string) => p && p.trim && p.trim().length > 0)
+      .slice(0, 3);
+      
+    // Handle case where no paragraphs were found
+    if (!paragraphs || paragraphs.length === 0) {
+      return (
+        <p className="italic text-gray-600">
+          This document's structure makes automatic summarization difficult. 
+          The full content will be used in analysis.
+        </p>
+      );
+    }
     
-  const firstParagraph = paragraphs[0]?.substring(0, 300) + (paragraphs[0]?.length > 300 ? '...' : '');
-  
-  // Try to extract a potential title
-  const potentialTitle = paragraphs[0]?.split('.')[0]?.trim();
-  const hasTitle = potentialTitle && potentialTitle.length < 100 && potentialTitle.length > 10;
-  
-  return (
-    <div>
-      {hasTitle && <h5 className="font-medium text-gray-900 mb-2">{potentialTitle}</h5>}
-      <p className="text-gray-700 mb-3">{firstParagraph}</p>
-      {paragraphs.length > 1 && (
+    // Safely extract the first paragraph
+    const firstParagraph = paragraphs[0] ? 
+      (paragraphs[0].substring(0, 300) + (paragraphs[0].length > 300 ? '...' : '')) : 
+      "Document content unavailable for preview";
+    
+    // Try to extract a potential title
+    const potentialTitle = paragraphs[0]?.split('.')?.length > 0 ? paragraphs[0].split('.')[0]?.trim() : '';
+    const hasTitle = potentialTitle && potentialTitle.length < 100 && potentialTitle.length > 10;
+    
+    return (
+      <div>
+        {hasTitle && <h5 className="font-medium text-gray-900 mb-2">{potentialTitle}</h5>}
+        <p className="text-gray-700 mb-3">{firstParagraph}</p>
         <p className="text-sm text-gray-500 mt-2">
-          This document contains approximately {countWords(doc.extractedText)} words of content.
+          This document contains approximately {countWords(extractedText)} words of content.
           Full content is used for document analysis.
         </p>
-      )}
-    </div>
-  );
+      </div>
+    );
+  } catch (error) {
+    console.error("Error generating document summary:", error);
+    return (
+      <p className="italic text-gray-600">
+        Error generating summary. The document may have an unsupported format, but will still be analyzed.
+      </p>
+    );
+  }
 }
 
 // Generate keywords from document content
 function generateDocumentKeywords(doc: any): string[] {
-  if (!doc.extractedText || doc.extractedText.length < 100) return ['Unavailable'];
+  if (!doc || !doc.extractedText) return ['Unavailable'];
   
-  // Very simple extraction of potential keywords
-  // In a real app, you would use NLP or a proper keyword extraction algorithm
-  const commonFinancialTerms = [
-    'stock', 'market', 'investment', 'portfolio', 'equity', 'asset', 'bond',
-    'interest', 'rate', 'inflation', 'economy', 'growth', 'recession', 
-    'profit', 'earnings', 'dividend', 'yield', 'risk', 'return', 'volatility',
-    'bull', 'bear', 'trend', 'analysis', 'forecast', 'strategy', 'sector',
-    'industry', 'company', 'reserve', 'federal', 'policy', 'fiscal', 'trade',
-    'debt', 'credit', 'balance', 'currency', 'exchange', 'commodity', 'fund',
-    'derivative', 'option', 'futures', 'crypto', 'blockchain', 'tech'
-  ];
-  
-  // Extract potential ticker symbols (uppercase letters)
-  const tickerRegex = /\b[A-Z]{2,5}\b/g;
-  const potentialTickers = doc.extractedText.match(tickerRegex) || [];
-  
-  // Find financial terms in the document
-  const foundTerms = commonFinancialTerms.filter(term => 
-    doc.extractedText.toLowerCase().includes(term.toLowerCase())
-  );
-  
-  // Combine and limit
-  const allKeywords = [...potentialTickers.slice(0, 3), ...foundTerms.slice(0, 4)];
-  return allKeywords.slice(0, 7); // Limit to 7 keywords total
+  try {
+    const extractedText = doc.extractedText?.toString() || "";
+    
+    if (extractedText.length < 100) return ['Unavailable'];
+    
+    // Very simple extraction of potential keywords
+    // In a real app, you would use NLP or a proper keyword extraction algorithm
+    const commonFinancialTerms = [
+      'stock', 'market', 'investment', 'portfolio', 'equity', 'asset', 'bond',
+      'interest', 'rate', 'inflation', 'economy', 'growth', 'recession', 
+      'profit', 'earnings', 'dividend', 'yield', 'risk', 'return', 'volatility',
+      'bull', 'bear', 'trend', 'analysis', 'forecast', 'strategy', 'sector',
+      'industry', 'company', 'reserve', 'federal', 'policy', 'fiscal', 'trade',
+      'debt', 'credit', 'balance', 'currency', 'exchange', 'commodity', 'fund',
+      'derivative', 'option', 'futures', 'crypto', 'blockchain', 'tech',
+      'renewable', 'energy', 'semiconductor', 'electric', 'solar', 'climate'
+    ];
+    
+    // Extract potential ticker symbols (uppercase letters)
+    const tickerRegex = /\b[A-Z]{1,5}\b/g;
+    let potentialTickers = [];
+    
+    try {
+      potentialTickers = extractedText.match(tickerRegex) || [];
+      // Filter out common English words that might be all caps
+      potentialTickers = potentialTickers.filter(ticker => 
+        ticker.length >= 2 && 
+        !['A', 'I', 'AM', 'PM', 'AN', 'BY', 'TO', 'IN', 'IS', 'IT', 'NO', 'OF', 'ON', 'OR', 'SO', 'US', 'AT', 'BE'].includes(ticker)
+      );
+    } catch (err) {
+      console.error("Error extracting tickers:", err);
+      potentialTickers = [];
+    }
+    
+    // Find financial terms in the document
+    const foundTerms = commonFinancialTerms.filter(term => {
+      try {
+        return extractedText.toLowerCase().includes(term.toLowerCase());
+      } catch (err) {
+        return false;
+      }
+    });
+    
+    // Combine and limit
+    const allKeywords = [...potentialTickers.slice(0, 3), ...foundTerms.slice(0, 5)];
+    
+    return allKeywords.length > 0 ? 
+      allKeywords.slice(0, 8) : // Limit to 8 keywords total 
+      ['Document', 'Financial', 'Analysis']; // Fallback keywords
+  } catch (error) {
+    console.error("Error generating document keywords:", error);
+    return ['Document', 'Analysis'];
+  }
 }
 
 // Define types for the batch details response
@@ -729,13 +780,119 @@ export default function BatchDetailsPage() {
                   </div>
                 </div>
                 
+                {/* Market Sectors and Outlook */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                  {/* Market Sectors */}
+                  {analysis.marketSectors && analysis.marketSectors.length > 0 && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Market Sectors Analysis</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.marketSectors.map((sector, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-purple-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-xs font-bold text-purple-800">{i+1}</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{sector}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Market Outlook */}
+                  {analysis.marketOutlook && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Market Outlook</h3>
+                      </div>
+                      <div className="p-4">
+                        <div className="text-sm text-gray-700">
+                          {analysis.marketOutlook}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Key Metrics and Investment Risks */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                  {/* Key Financial Metrics */}
+                  {analysis.keyMetrics && analysis.keyMetrics.length > 0 && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Key Financial Metrics</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.keyMetrics.map((metric, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-xs font-bold text-indigo-800">{i+1}</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{metric}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Investment Risks */}
+                  {analysis.investmentRisks && analysis.investmentRisks.length > 0 && (
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Investment Risks</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.investmentRisks.map((risk, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-rose-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-rose-800">⚠</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{risk}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Price Trends */}
+                {analysis.priceTrends && analysis.priceTrends.length > 0 && (
+                  <div className="mt-6">
+                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-medium text-gray-800">Price Trends</h3>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2">
+                          {analysis.priceTrends.map((trend, i) => (
+                            <li key={i} className="flex items-start">
+                              <div className="flex-shrink-0 h-5 w-5 rounded-full bg-cyan-100 flex items-center justify-center mr-2 mt-0.5">
+                                <span className="text-xs font-bold text-cyan-800">{i+1}</span>
+                              </div>
+                              <span className="text-sm text-gray-700">{trend}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Analysis Disclaimer */}
-                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-xs text-gray-500">
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-xs text-gray-500 mt-6">
                   <p className="font-medium mb-1">Analysis Disclaimer:</p>
                   <p>This analysis is generated using AI models and should not be considered professional financial advice. 
                   Always consult with qualified financial advisors before making investment decisions.
                   {analysis.tickers && analysis.tickers.length > 0 && 
-                    `Securities mentioned (${analysis.tickers.join(', ')}) are for informational purposes only.`
+                    ` Securities mentioned (${analysis.tickers.join(', ')}) are for informational purposes only.`
                   }</p>
                 </div>
               </CardContent>
@@ -817,7 +974,12 @@ export default function BatchDetailsPage() {
                   <li>Shared and diverging ideas</li>
                   <li>Financial tickers mentioned</li>
                   <li>Overall sentiment analysis</li>
-                  <li>Key recommendations</li>
+                  <li>Key recommendations and investment considerations</li>
+                  <li>Market sector analysis and performance data</li>
+                  <li>Future market outlook with specific timeframes</li>
+                  <li>Key financial metrics with actual figures</li>
+                  <li>Specific investment risks and impact assessments</li>
+                  <li>Price trends with percentage changes</li>
                 </ul>
               </CardContent>
             </Card>

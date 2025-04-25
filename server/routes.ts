@@ -1270,7 +1270,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sentimentConfidence: analysis.sentiment?.confidence || 0.5,
           sharedIdeas: analysis.sharedIdeas || [],
           divergingIdeas: analysis.divergingIdeas || [],
-          keyPoints: analysis.keyPoints || []
+          keyPoints: analysis.keyPoints || [],
+          // New financial data fields
+          marketSectors: analysis.marketSectors || [],
+          marketOutlook: analysis.marketOutlook || 'No market outlook available',
+          keyMetrics: analysis.keyMetrics || [],
+          investmentRisks: analysis.investmentRisks || [],
+          priceTrends: analysis.priceTrends || []
         };
         
         // Save the analysis to the database

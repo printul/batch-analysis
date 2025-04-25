@@ -523,9 +523,16 @@ export class DatabaseStorage implements IStorage {
     recommendations?: string[];
     sentimentScore: number;
     sentimentLabel: string;
+    sentimentConfidence?: number;
     sharedIdeas?: string[];
     divergingIdeas?: string[];
     keyPoints: string[];
+    // New financial data fields
+    marketSectors?: string[];
+    marketOutlook?: string;
+    keyMetrics?: string[];
+    investmentRisks?: string[];
+    priceTrends?: string[];
   }): Promise<DocumentAnalysisRecord> {
     try {
       // Check if analysis already exists for this batch

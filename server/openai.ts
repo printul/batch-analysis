@@ -28,6 +28,12 @@ export interface DocumentAnalysis {
   sharedIdeas?: string[];
   divergingIdeas?: string[];
   keyPoints: string[];
+  // New financial data fields
+  marketSectors?: string[];
+  marketOutlook?: string;
+  keyMetrics?: string[];
+  investmentRisks?: string[];
+  priceTrends?: string[];
 }
 
 export async function analyzeDocuments(documents: {
@@ -43,7 +49,13 @@ export async function analyzeDocuments(documents: {
       sentiment: { score: 3, label: "neutral", confidence: 0 },
       sharedIdeas: [],
       divergingIdeas: [],
-      keyPoints: []
+      keyPoints: [],
+      // New financial data fields
+      marketSectors: [],
+      marketOutlook: "No documents to analyze for market outlook.",
+      keyMetrics: [],
+      investmentRisks: [],
+      priceTrends: []
     };
   }
 
@@ -102,7 +114,7 @@ export async function analyzeDocuments(documents: {
     sentiment analysis, and both shared and diverging perspectives across documents. Always respond in valid JSON format with structured, detailed financial insights.`;
     
     const userPrompt = `
-    Analyze the following financial document content to identify detailed financial insights, market trends, specific securities mentioned, and investment considerations:
+    Analyze the following financial document content to identify detailed financial insights, market trends, specific securities mentioned, investment considerations, and actionable data:
     
     ${combinedText}
     
@@ -144,9 +156,34 @@ export async function analyzeDocuments(documents: {
         "Critical financial insight 2 with specific data points when available",
         "Critical financial insight 3 with specific data points when available",
         "Critical financial insight 4 with specific data points when available",
-        "Critical financial insight 5 with specific data points when available",
-        "Critical financial insight 6 with specific data points when available",
-        "Critical financial insight 7 with specific data points when available"
+        "Critical financial insight 5 with specific data points when available"
+      ],
+      
+      "marketSectors": [
+        "Detailed analysis of sector 1 performance with specific data",
+        "Detailed analysis of sector 2 performance with specific data",
+        "Detailed analysis of sector 3 performance with specific data"
+      ],
+      
+      "marketOutlook": "A detailed paragraph on future market outlook with specific timeframes and factors mentioned in documents",
+      
+      "keyMetrics": [
+        "Key financial metric 1 with actual figures (P/E ratios, yields, growth rates, etc.)",
+        "Key financial metric 2 with actual figures",
+        "Key financial metric 3 with actual figures",
+        "Key financial metric 4 with actual figures"
+      ],
+      
+      "investmentRisks": [
+        "Specific investment risk 1 with concrete examples and impact assessment",
+        "Specific investment risk 2 with concrete examples and impact assessment",
+        "Specific investment risk 3 with concrete examples and impact assessment"
+      ],
+      
+      "priceTrends": [
+        "Price trend 1 with specific numbers, timeframes and security names",
+        "Price trend 2 with specific numbers, timeframes and security names",
+        "Price trend 3 with specific numbers, timeframes and security names"
       ]
     }
     
@@ -168,7 +205,18 @@ export async function analyzeDocuments(documents: {
     
     8. For "keyPoints", identify 5-7 critical financial insights from the documents. These should be specific and highlight the most important financial information, including particular statistics, forecasts, or data points when available.
     
-    If any section is not applicable (e.g., no tickers mentioned), provide an empty array.
+    9. For "marketSectors", identify 3-5 key market sectors discussed in the documents and provide specific performance data, trends, and key companies mentioned for each sector.
+    
+    10. For "marketOutlook", synthesize a forward-looking analysis of market conditions with specific timeframes (e.g., "over the next 6-12 months"), factors that might impact markets, and potential scenarios discussed in the documents.
+    
+    11. For "keyMetrics", extract 3-5 financial metrics mentioned in the documents with their actual values where available (e.g., "Tesla's P/E ratio of 120", "10-year Treasury yield of 4.2%", "S&P 500 projected EPS growth of 8.3%").
+    
+    12. For "investmentRisks", identify 3-4 specific risks mentioned in the documents that could impact investments, with details on potential impacts and severity.
+    
+    13. For "priceTrends", highlight 3-4 notable price movements mentioned in the documents with specific percentage changes, timeframes, and the relevant securities (e.g., "NVIDIA (NVDA) share price increased 15.3% from January to March 2025").
+    
+    If any section is not applicable or lacks specific data in the documents, provide the most specific information possible based on what is available. For fields with no relevant information, provide an empty array or appropriate placeholder text explaining the absence of specific data.
+    
     Return ONLY the JSON object, no additional explanation.`;
 
     const response = await openai.chat.completions.create({
@@ -203,7 +251,13 @@ export async function analyzeDocuments(documents: {
       sentiment: { score: 3, label: "neutral", confidence: 0 },
       sharedIdeas: [],
       divergingIdeas: [],
-      keyPoints: []
+      keyPoints: [],
+      // New financial data fields
+      marketSectors: [],
+      marketOutlook: "Market outlook data could not be generated due to analysis error.",
+      keyMetrics: [], 
+      investmentRisks: [],
+      priceTrends: []
     };
   }
 }

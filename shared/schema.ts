@@ -73,9 +73,16 @@ export const documentAnalysis = pgTable("document_analysis", {
   recommendations: text("recommendations").array(),
   sentimentScore: doublePrecision("sentiment_score"),
   sentimentLabel: text("sentiment_label"),
+  sentimentConfidence: doublePrecision("sentiment_confidence").default(0.5),
   sharedIdeas: text("shared_ideas").array(),
   divergingIdeas: text("diverging_ideas").array(),
   keyPoints: text("key_points").array(),
+  // New financial data fields
+  marketSectors: text("market_sectors").array(),
+  marketOutlook: text("market_outlook"),
+  keyMetrics: text("key_metrics").array(),
+  investmentRisks: text("investment_risks").array(),
+  priceTrends: text("price_trends").array(),
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
