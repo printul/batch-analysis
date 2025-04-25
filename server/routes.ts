@@ -1130,8 +1130,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (isPDFBinary()) {
             console.log(`Document ID ${documentId} appears to be a binary PDF.`);
-            // Handle binary PDF with a clear message
-            extractedText = `This appears to be a binary PDF file that cannot be displayed properly in text format. The document will still be used for analysis, but text preview may be limited.`;
+            // Handle binary PDF with a clear message and placeholder for OpenAI analysis
+            extractedText = `[BINARY_PDF_CONTENT] This document contains binary PDF data that will be analyzed by OpenAI. An executive summary will be provided in the analysis results.
+
+The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While a direct text preview is not available, our system will still analyze the document content and provide insights in the analysis results.`;
           } else {
             // Proceed with text extraction for text-based PDFs
             const textChunks = [];
@@ -1152,7 +1154,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 rawText.match(/\/[A-Z][a-z]+ /g)?.length > 10) {
               // This is likely binary PDF content
               console.log(`Document ID ${documentId} text extraction found binary PDF content.`);
-              extractedText = `This PDF file contains binary data that cannot be properly displayed as text. The document will still be used for analysis, but text preview is limited.`;
+              extractedText = `[BINARY_PDF_CONTENT] This document contains binary PDF data that will be analyzed by OpenAI. An executive summary will be provided in the analysis results.
+
+The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While a direct text preview is not available, our system will still analyze the document content and provide insights in the analysis results.`;
             } else {
               // Clean up the text by removing non-word sequences
               extractedText = rawText
@@ -1162,7 +1166,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Final check for meaningless content
               if (extractedText.trim().length < 100 || 
                   extractedText.split(/\s+/).length < 20) {
-                extractedText = `The PDF file appears to contain minimal text content that could be extracted. This may be a scanned document or primarily image-based PDF.`;
+                extractedText = `[MINIMAL_TEXT_CONTENT] This document contains minimal extractable text content.
+                
+The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While the document appears to have very little text content (possibly a scanned document or image-based PDF), our system will still analyze what's available and provide insights in the analysis results.`;
               }
             }
           }
