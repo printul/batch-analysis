@@ -45,7 +45,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileText, FilePlus, Upload, FolderOpen } from "lucide-react";
+import { Loader2, FileText, FilePlus, Upload, FolderOpen, Edit, Pencil } from "lucide-react";
+import EditBatchModal from "@/components/edit-batch-modal";
 
 export type User = {
   id: number;
@@ -373,6 +374,8 @@ export default function Dashboard() {
   const [isCreateBatchModalOpen, setIsCreateBatchModalOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [isUploadDocumentModalOpen, setIsUploadDocumentModalOpen] = useState(false);
+  const [isEditBatchModalOpen, setIsEditBatchModalOpen] = useState(false);
+  const [selectedBatchForEdit, setSelectedBatchForEdit] = useState<DocumentBatch | null>(null);
   
   // Use the auth context instead of direct query
   const { user, isLoading } = useAuth();
@@ -456,8 +459,23 @@ export default function Dashboard() {
             {batches.map((batch: any) => (
               <Card key={batch.id} className="overflow-hidden">
                 <CardHeader className="pb-2">
-                  <CardTitle>{batch.name}</CardTitle>
-                  <CardDescription className="truncate">{batch.description}</CardDescription>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle>{batch.name}</CardTitle>
+                      <CardDescription className="truncate">{batch.description}</CardDescription>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8" 
+                      onClick={() => {
+                        setSelectedBatchForEdit(batch);
+                        setIsEditBatchModalOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="flex justify-between text-sm mb-2">
@@ -1000,6 +1018,18 @@ export default function Dashboard() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Edit Batch Modal */}
+      {selectedBatchForEdit && (
+        <EditBatchModal 
+          isOpen={isEditBatchModalOpen}
+          onClose={() => {
+            setIsEditBatchModalOpen(false);
+            setSelectedBatchForEdit(null);
+          }}
+          batch={selectedBatchForEdit}
+        />
+      )}
     </div>
   );
 }
