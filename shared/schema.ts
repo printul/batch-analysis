@@ -1,4 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -131,3 +132,19 @@ export type DocumentBatch = typeof documentBatches.$inferSelect;
 export type InsertDocumentBatch = z.infer<typeof documentBatchSchema>;
 export type Document = typeof documents.$inferSelect;
 export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
+
+// Define relations
+export const documentsRelations = relations(documents, ({ one }) => ({
+  batch: one(documentBatches, {
+    fields: [documents.batchId],
+    references: [documentBatches.id],
+  }),
+}));
+
+export const documentBatchesRelations = relations(documentBatches, ({ many, one }) => ({
+  documents: many(documents),
+  user: one(users, {
+    fields: [documentBatches.userId],
+    references: [users.id],
+  }),
+}));

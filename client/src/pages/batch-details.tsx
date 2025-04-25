@@ -176,9 +176,47 @@ export default function BatchDetailsPage() {
               <h1 className="text-2xl font-bold text-gray-900">{batch.name}</h1>
               <p className="text-gray-500">{batch.description}</p>
             </div>
-            <div>
-              <Badge className="mr-2">Batch ID: {batch.id}</Badge>
-              <Badge variant="outline">Created: {new Date(batch.createdAt).toLocaleDateString()}</Badge>
+            <div className="flex items-center gap-4">
+              <div>
+                <Badge className="mr-2">Batch ID: {batch.id}</Badge>
+                <Badge variant="outline">Created: {new Date(batch.createdAt).toLocaleDateString()}</Badge>
+              </div>
+              <Button 
+                variant="destructive"
+                onClick={async () => {
+                  if (confirm(`Are you sure you want to delete the entire batch "${batch.name}" and all its documents? This cannot be undone.`)) {
+                    try {
+                      const response = await fetch(`/api/document-batches/${batch.id}`, {
+                        method: 'DELETE',
+                        credentials: 'include'
+                      });
+                      
+                      if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Failed to delete batch: ${errorText}`);
+                      }
+                      
+                      toast({
+                        title: "Batch deleted",
+                        description: "The batch and all its documents have been deleted successfully."
+                      });
+                      
+                      // Redirect to dashboard
+                      setLocation('/dashboard');
+                    } catch (error) {
+                      console.error("Error deleting batch:", error);
+                      toast({
+                        title: "Error deleting batch",
+                        description: error instanceof Error ? error.message : "An unknown error occurred",
+                        variant: "destructive"
+                      });
+                    }
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Batch
+              </Button>
             </div>
           </div>
         </div>

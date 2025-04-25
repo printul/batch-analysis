@@ -60,6 +60,7 @@ export interface IStorage {
     extractedText?: string;
   }): Promise<Document>;
   getDocumentsByBatchId(batchId: number): Promise<Document[]>;
+  getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined>;
   updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined>;
   deleteDocument(id: number): Promise<boolean>;
   
