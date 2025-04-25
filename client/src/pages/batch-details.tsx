@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, BarChart3 } from "lucide-react";
 
 // Define types for the batch details response
 interface Document {
@@ -235,7 +235,7 @@ export default function BatchDetailsPage() {
                   {documents.map((doc) => (
                     <TabsContent key={doc.id} value={doc.id.toString()}>
                       <div className="border rounded-md p-4 bg-gray-50 overflow-auto max-h-96">
-                        {doc.extractedText ? (
+                        {doc.extractedText && doc.extractedText.trim() ? (
                           <pre className="whitespace-pre-wrap font-mono text-sm">{doc.extractedText}</pre>
                         ) : (
                           <p className="text-gray-500 italic">No text has been extracted from this document yet</p>
@@ -244,6 +244,86 @@ export default function BatchDetailsPage() {
                     </TabsContent>
                   ))}
                 </Tabs>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        
+        {documents.length > 0 && (
+          <div className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Analyze Documents</CardTitle>
+                  <CardDescription>Run AI analysis on all documents in this batch</CardDescription>
+                </div>
+                <Button 
+                  onClick={async () => {
+                    try {
+                      // Check if any documents have text first
+                      const hasExtractedText = documents.some(doc => doc.extractedText && doc.extractedText.trim());
+                      
+                      if (!hasExtractedText) {
+                        toast({
+                          title: "No text to analyze",
+                          description: "None of the documents in this batch have extracted text. Please wait for text extraction to complete.",
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+                      
+                      toast({
+                        title: "Starting analysis",
+                        description: "Analyzing documents in batch. This may take a moment...",
+                      });
+                      
+                      const response = await fetch(`/api/document-batches/${batchId}/analyze`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        credentials: 'include'
+                      });
+                      
+                      if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Analysis failed: ${errorText}`);
+                      }
+                      
+                      const result = await response.json();
+                      
+                      toast({
+                        title: "Analysis complete",
+                        description: "Document analysis has been completed successfully. Refreshing data...",
+                      });
+                      
+                      // Refresh the data
+                      refetch();
+                    } catch (error) {
+                      console.error("Error analyzing documents:", error);
+                      toast({
+                        title: "Analysis failed",
+                        description: error instanceof Error ? error.message : "An unknown error occurred",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Analyze Batch
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600">
+                  AI analysis will examine all documents in this batch and extract:
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-gray-600 list-disc list-inside">
+                  <li>Common themes across documents</li>
+                  <li>Shared and diverging ideas</li>
+                  <li>Financial tickers mentioned</li>
+                  <li>Overall sentiment analysis</li>
+                  <li>Key recommendations</li>
+                </ul>
               </CardContent>
             </Card>
           </div>

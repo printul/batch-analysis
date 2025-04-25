@@ -1143,27 +1143,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Endpoint to analyze documents by batch ID
   app.post('/api/document-batches/:batchId/analyze', isAuthenticated, async (req, res) => {
     try {
+      console.log(`[ANALYZE DEBUG] Starting analysis for batch ID: ${req.params.batchId}`);
+      console.log(`[ANALYZE DEBUG] User: ${req.user!.id} (${req.user!.username})`);
+      
       const batchId = parseInt(req.params.batchId);
       
       // Validate batch exists and user has access
       const batch = await storage.getDocumentBatch(batchId);
+      console.log(`[ANALYZE DEBUG] Batch found: ${!!batch}`);
       if (!batch) {
+        console.log(`[ANALYZE ERROR] Batch not found: ${batchId}`);
         return res.status(404).json({ error: 'Document batch not found' });
       }
+      console.log(`[ANALYZE DEBUG] Batch details: ID=${batch.id}, Name=${batch.name}, UserId=${batch.userId}`);
       
+      // Verify user access
       if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+        console.log(`[ANALYZE ERROR] Access denied for user ${req.user!.id} to batch owned by ${batch.userId}`);
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
+      console.log(`[ANALYZE DEBUG] User access verified`);
       
       // Get all documents in the batch
       const documents = await storage.getDocumentsByBatchId(batchId);
+      console.log(`[ANALYZE DEBUG] Found ${documents.length} documents for batch ${batchId}`);
       if (documents.length === 0) {
+        console.log(`[ANALYZE ERROR] No documents found in batch ${batchId}`);
         return res.status(400).json({ error: 'No documents found in this batch' });
       }
       
       // Check if documents have extracted text
-      const documentsWithText = documents.filter(doc => doc.extractedText);
+      const documentsWithText = documents.filter(doc => doc.extractedText && doc.extractedText.trim());
+      console.log(`[ANALYZE DEBUG] Found ${documentsWithText.length} documents with extracted text`);
       if (documentsWithText.length === 0) {
+        console.log(`[ANALYZE ERROR] No extracted text in any documents`);
         return res.status(400).json({ error: 'No text extracted from documents yet. Please try again later.' });
       }
       
@@ -1172,32 +1185,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: doc.filename,
         content: doc.extractedText || ''
       }));
+      console.log(`[ANALYZE DEBUG] Prepared ${docsForAnalysis.length} documents for analysis`);
       
-      // Call OpenAI for analysis
-      const analysis = await analyzeDocuments(docsForAnalysis);
-      
-      // Map the OpenAI analysis result to our database schema
-      const analysisResult = {
-        batchId,
-        summary: analysis.summary,
-        themes: analysis.themes,
-        tickers: analysis.tickers || [],
-        recommendations: analysis.recommendations || [],
-        sentimentScore: analysis.sentiment.score,
-        sentimentLabel: analysis.sentiment.label,
-        sentimentConfidence: analysis.sentiment.confidence,
-        sharedIdeas: analysis.sharedIdeas || [],
-        divergingIdeas: analysis.divergingIdeas || [],
-        keyPoints: analysis.keyPoints
-      };
-      
-      // Save the analysis to the database
-      const savedAnalysis = await storage.saveDocumentAnalysis(analysisResult);
-      
-      res.json(savedAnalysis);
+      try {
+        // Call OpenAI for analysis
+        console.log('[ANALYZE DEBUG] Calling OpenAI API for document analysis');
+        const analysis = await analyzeDocuments(docsForAnalysis);
+        console.log('[ANALYZE DEBUG] Successfully received analysis from OpenAI');
+        
+        // Map the OpenAI analysis result to our database schema
+        const analysisResult = {
+          batchId,
+          summary: analysis.summary || 'No summary available',
+          themes: analysis.themes || [],
+          tickers: analysis.tickers || [],
+          recommendations: analysis.recommendations || [],
+          sentimentScore: analysis.sentiment?.score || 3,
+          sentimentLabel: analysis.sentiment?.label || 'neutral',
+          sentimentConfidence: analysis.sentiment?.confidence || 0.5,
+          sharedIdeas: analysis.sharedIdeas || [],
+          divergingIdeas: analysis.divergingIdeas || [],
+          keyPoints: analysis.keyPoints || []
+        };
+        
+        // Save the analysis to the database
+        console.log('[ANALYZE DEBUG] Saving analysis to database');
+        const savedAnalysis = await storage.saveDocumentAnalysis(analysisResult);
+        console.log('[ANALYZE DEBUG] Analysis saved successfully');
+        
+        res.json(savedAnalysis);
+      } catch (analysisError) {
+        console.error('[ANALYZE ERROR] Error during analysis with OpenAI:', analysisError);
+        res.status(500).json({ error: 'Failed to analyze documents with AI. Please try again.' });
+      }
     } catch (error) {
-      console.error('Error analyzing documents:', error);
-      res.status(500).json({ error: 'Failed to analyze documents' });
+      console.error('[ANALYZE ERROR] General error analyzing documents:', error);
+      res.status(500).json({ error: 'Failed to analyze documents. Please try again later.' });
     }
   });
 
