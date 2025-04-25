@@ -10,8 +10,94 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, BarChart3, Trash2, Pencil } from "lucide-react";
+import { 
+  Loader2, 
+  ArrowLeft, 
+  BarChart3, 
+  Trash2, 
+  Pencil, 
+  FileText, 
+  AlertTriangle, 
+  AlertCircle 
+} from "lucide-react";
 import EditBatchModal from "@/components/edit-batch-modal";
+
+// Helper function to count words in text
+function countWords(text: string): number {
+  if (!text || typeof text !== 'string') return 0;
+  return text.trim().split(/\s+/).length;
+}
+
+// Function to generate a brief summary from document text
+function generateDocumentSummary(doc: any): React.ReactNode {
+  if (!doc.extractedText) return <p>No text content available</p>;
+  
+  // Handle binary PDFs and poor quality extracts
+  if (doc.extractedText.startsWith('%PDF') || 
+      doc.extractedText.includes('/Type /Catalog') ||
+      doc.extractedText.length < 100) {
+    return (
+      <p className="italic text-gray-600">
+        This document contains content that cannot be summarized. Please refer to the analysis section for insights.
+      </p>
+    );
+  }
+  
+  // Get the first few paragraphs or a character limit
+  const paragraphs = doc.extractedText
+    .split('\n')
+    .filter((p: string) => p.trim().length > 0)
+    .slice(0, 3);
+    
+  const firstParagraph = paragraphs[0]?.substring(0, 300) + (paragraphs[0]?.length > 300 ? '...' : '');
+  
+  // Try to extract a potential title
+  const potentialTitle = paragraphs[0]?.split('.')[0]?.trim();
+  const hasTitle = potentialTitle && potentialTitle.length < 100 && potentialTitle.length > 10;
+  
+  return (
+    <div>
+      {hasTitle && <h5 className="font-medium text-gray-900 mb-2">{potentialTitle}</h5>}
+      <p className="text-gray-700 mb-3">{firstParagraph}</p>
+      {paragraphs.length > 1 && (
+        <p className="text-sm text-gray-500 mt-2">
+          This document contains approximately {countWords(doc.extractedText)} words of content.
+          Full content is used for document analysis.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Generate keywords from document content
+function generateDocumentKeywords(doc: any): string[] {
+  if (!doc.extractedText || doc.extractedText.length < 100) return ['Unavailable'];
+  
+  // Very simple extraction of potential keywords
+  // In a real app, you would use NLP or a proper keyword extraction algorithm
+  const commonFinancialTerms = [
+    'stock', 'market', 'investment', 'portfolio', 'equity', 'asset', 'bond',
+    'interest', 'rate', 'inflation', 'economy', 'growth', 'recession', 
+    'profit', 'earnings', 'dividend', 'yield', 'risk', 'return', 'volatility',
+    'bull', 'bear', 'trend', 'analysis', 'forecast', 'strategy', 'sector',
+    'industry', 'company', 'reserve', 'federal', 'policy', 'fiscal', 'trade',
+    'debt', 'credit', 'balance', 'currency', 'exchange', 'commodity', 'fund',
+    'derivative', 'option', 'futures', 'crypto', 'blockchain', 'tech'
+  ];
+  
+  // Extract potential ticker symbols (uppercase letters)
+  const tickerRegex = /\b[A-Z]{2,5}\b/g;
+  const potentialTickers = doc.extractedText.match(tickerRegex) || [];
+  
+  // Find financial terms in the document
+  const foundTerms = commonFinancialTerms.filter(term => 
+    doc.extractedText.toLowerCase().includes(term.toLowerCase())
+  );
+  
+  // Combine and limit
+  const allKeywords = [...potentialTickers.slice(0, 3), ...foundTerms.slice(0, 4)];
+  return allKeywords.slice(0, 7); // Limit to 7 keywords total
+}
 
 // Define types for the batch details response
 interface Document {
@@ -334,8 +420,8 @@ export default function BatchDetailsPage() {
           <div className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Document Preview</CardTitle>
-                <CardDescription>Preview of extracted text from documents</CardDescription>
+                <CardTitle>Document Summaries</CardTitle>
+                <CardDescription>Brief summaries of each document in this batch</CardDescription>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue={documents[0]?.id.toString()}>
@@ -349,23 +435,73 @@ export default function BatchDetailsPage() {
                   
                   {documents.map((doc) => (
                     <TabsContent key={doc.id} value={doc.id.toString()}>
-                      <div className="border rounded-md p-4 bg-gray-50 overflow-auto max-h-96">
+                      <div className="border rounded-md p-6 bg-gray-50 overflow-auto">
                         {doc.extractedText && doc.extractedText.trim() ? (
-                          <div>
-                            {doc.extractedText.startsWith('%PDF') || doc.extractedText.includes('/Type /Catalog') ? (
-                              <div className="p-4 bg-amber-50 border border-amber-200 rounded mb-4">
-                                <p className="text-amber-700 font-medium">This PDF contains binary data that cannot be displayed properly.</p>
-                                <p className="text-amber-600 text-sm mt-1">The text extraction process may need to be adjusted for this document type.</p>
+                          <div className="space-y-4">
+                            {/* Document File Info */}
+                            <div className="flex items-center space-x-2">
+                              <FileText className="h-5 w-5 text-blue-500" />
+                              <span className="font-medium text-gray-800">
+                                {doc.filename}
+                              </span>
+                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                {doc.fileType?.toUpperCase()}
+                              </span>
+                            </div>
+                            
+                            {/* Document Summary Card */}
+                            <div className="p-4 bg-white border rounded-md shadow-sm">
+                              <h4 className="font-medium text-gray-800 mb-2">Document Summary</h4>
+                              
+                              {doc.extractedText.startsWith('%PDF') || doc.extractedText.includes('/Type /Catalog') ? (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded mb-3">
+                                  <p className="text-amber-700 font-medium flex items-center">
+                                    <AlertTriangle className="h-4 w-4 mr-2" />
+                                    This document contains binary PDF data
+                                  </p>
+                                  <p className="text-amber-600 text-sm mt-1">
+                                    A full text preview is not available, but the document will still be analyzed.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="prose prose-sm max-w-none">
+                                  {generateDocumentSummary(doc)}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Document Statistics */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                              <div className="bg-blue-50 p-3 rounded-md">
+                                <p className="text-xs text-blue-500 font-medium">Word Count</p>
+                                <p className="text-lg font-semibold text-blue-700">
+                                  {countWords(doc.extractedText)}
+                                </p>
                               </div>
-                            ) : null}
-                            <pre className="whitespace-pre-wrap font-mono text-sm">
-                              {doc.extractedText.length > 10000 
-                                ? doc.extractedText.substring(0, 10000) + "... [Content truncated for display. Full text is available for analysis]" 
-                                : doc.extractedText}
-                            </pre>
+                              <div className="bg-green-50 p-3 rounded-md">
+                                <p className="text-xs text-green-500 font-medium">Date Added</p>
+                                <p className="text-sm font-medium text-green-700">
+                                  {new Date(doc.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <div className="bg-purple-50 p-3 rounded-md col-span-2">
+                                <p className="text-xs text-purple-500 font-medium">Key Topics</p>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {generateDocumentKeywords(doc).map((keyword, i) => (
+                                    <span key={i} className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+                                      {keyword}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         ) : (
-                          <p className="text-gray-500 italic">No text has been extracted from this document yet</p>
+                          <div className="flex flex-col items-center justify-center py-8">
+                            <AlertCircle className="h-8 w-8 text-amber-500 mb-2" />
+                            <p className="text-gray-600 font-medium">No text has been extracted from this document yet</p>
+                            <p className="text-gray-500 text-sm">The document may still be processing or may not contain extractable text</p>
+                          </div>
                         )}
                       </div>
                     </TabsContent>
