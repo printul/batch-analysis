@@ -813,6 +813,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Update document batch (for renaming batches)
+  app.patch('/api/document-batches/:id', isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const { name, description } = req.body;
+      
+      // Validate input
+      if (!name) {
+        return res.status(400).json({ error: 'Batch name is required' });
+      }
+      
+      // Get the batch to verify ownership
+      const batch = await storage.getDocumentBatch(batchId);
+      
+      if (!batch) {
+        return res.status(404).json({ error: 'Batch not found' });
+      }
+      
+      // Verify the user owns this batch
+      if (batch.userId !== req.user!.id) {
+        return res.status(403).json({ error: 'You do not have permission to update this batch' });
+      }
+      
+      // Update the batch
+      const updatedBatch = await storage.updateDocumentBatch(batchId, { name, description });
+      
+      res.json({ 
+        success: true, 
+        batch: updatedBatch 
+      });
+    } catch (error) {
+      console.error('Error updating document batch:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
   // Static HTML routes (for compatibility with webview)
   app.get('/static', (req, res) => {
     res.sendFile('public/index.html', { root: './client' });

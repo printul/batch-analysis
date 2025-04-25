@@ -49,6 +49,7 @@ export interface IStorage {
   createDocumentBatch(batch: InsertDocumentBatch & { userId: number }): Promise<DocumentBatch>;
   getDocumentBatch(id: number): Promise<DocumentBatch | undefined>;
   getDocumentBatchesByUserId(userId: number): Promise<DocumentBatch[]>;
+  updateDocumentBatch(id: number, updates: { name: string; description?: string }): Promise<DocumentBatch>;
   deleteDocumentBatch(id: number): Promise<boolean>;
   
   // Document operations
@@ -399,6 +400,20 @@ export class DatabaseStorage implements IStorage {
       .from(documentBatches)
       .where(eq(documentBatches.userId, userId))
       .orderBy(desc(documentBatches.createdAt));
+  }
+  
+  async updateDocumentBatch(id: number, updates: { name: string; description?: string }): Promise<DocumentBatch> {
+    const [updatedBatch] = await db
+      .update(documentBatches)
+      .set(updates)
+      .where(eq(documentBatches.id, id))
+      .returning();
+      
+    if (!updatedBatch) {
+      throw new Error(`Document batch with ID ${id} not found`);
+    }
+    
+    return updatedBatch;
   }
 
   async deleteDocumentBatch(id: number): Promise<boolean> {
