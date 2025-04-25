@@ -1229,15 +1229,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       
-      // Get document details
-      const document = await storage.getDocumentWithBatch(documentId);
+      // First, get the document details directly
+      const document = await storage.getDocument(documentId);
       
       if (!document) {
         return res.status(404).json({ error: 'Document not found' });
       }
       
+      // Get the batch to check permissions
+      if (!document.batchId) {
+        return res.status(404).json({ error: 'Document batch ID not found' });
+      }
+      
+      const batch = await storage.getDocumentBatch(document.batchId);
+      
+      if (!batch) {
+        return res.status(404).json({ error: 'Document batch not found' });
+      }
+      
       // Check if user has permission to delete
-      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this document' });
       }
       

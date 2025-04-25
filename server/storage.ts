@@ -59,6 +59,7 @@ export interface IStorage {
     filePath: string;
     extractedText?: string;
   }): Promise<Document>;
+  getDocument(id: number): Promise<Document | undefined>;
   getDocumentsByBatchId(batchId: number): Promise<Document[]>;
   getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined>;
   updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined>;
@@ -435,6 +436,15 @@ export class DatabaseStorage implements IStorage {
     
     return newDocument;
   }
+  
+  async getDocument(id: number): Promise<Document | undefined> {
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, id));
+      
+    return document;
+  }
 
   async getDocumentsByBatchId(batchId: number): Promise<Document[]> {
     return db
@@ -445,14 +455,29 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined> {
-    const result = await db.query.documents.findFirst({
-      where: eq(documents.id, id),
-      with: {
-        batch: true
-      }
-    });
+    // Manual join approach since we're having issues with the relations
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, id));
     
-    return result;
+    if (!document || !document.batchId) {
+      return undefined;
+    }
+    
+    const [batch] = await db
+      .select()
+      .from(documentBatches)
+      .where(eq(documentBatches.id, document.batchId));
+    
+    if (!batch) {
+      return undefined;
+    }
+    
+    return {
+      ...document,
+      batch
+    };
   }
 
   async updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined> {
