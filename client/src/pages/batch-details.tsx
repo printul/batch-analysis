@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, BarChart3 } from "lucide-react";
+import { Loader2, ArrowLeft, BarChart3, Trash2 } from "lucide-react";
 
 // Define types for the batch details response
 interface Document {
@@ -206,6 +206,7 @@ export default function BatchDetailsPage() {
                       <th className="text-left p-2">Type</th>
                       <th className="text-left p-2">Uploaded On</th>
                       <th className="text-left p-2">Text Extracted</th>
+                      <th className="text-left p-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -223,6 +224,44 @@ export default function BatchDetailsPage() {
                           ) : (
                             <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-200">No</Badge>
                           )}
+                        </td>
+                        <td className="p-2">
+                          <Button 
+                            variant="destructive"
+                            size="sm"
+                            onClick={async () => {
+                              if (confirm(`Are you sure you want to delete the document "${doc.filename}"? This cannot be undone.`)) {
+                                try {
+                                  const response = await fetch(`/api/documents/${doc.id}`, {
+                                    method: 'DELETE',
+                                    credentials: 'include'
+                                  });
+                                  
+                                  if (!response.ok) {
+                                    const errorText = await response.text();
+                                    throw new Error(`Failed to delete document: ${errorText}`);
+                                  }
+                                  
+                                  toast({
+                                    title: "Document deleted",
+                                    description: "The document has been deleted successfully."
+                                  });
+                                  
+                                  // Refresh the data
+                                  refetch();
+                                } catch (error) {
+                                  console.error("Error deleting document:", error);
+                                  toast({
+                                    title: "Error deleting document",
+                                    description: error instanceof Error ? error.message : "An unknown error occurred",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </td>
                       </tr>
                     ))}

@@ -442,6 +442,17 @@ export class DatabaseStorage implements IStorage {
       .where(eq(documents.batchId, batchId))
       .orderBy(documents.filename);
   }
+  
+  async getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined> {
+    const result = await db.query.documents.findFirst({
+      where: eq(documents.id, id),
+      with: {
+        batch: true
+      }
+    });
+    
+    return result;
+  }
 
   async updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined> {
     const [updated] = await db

@@ -1223,6 +1223,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to analyze documents. Please try again later.' });
     }
   });
+  
+  // Delete document endpoint
+  app.delete('/api/documents/:id', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      
+      // Get document details
+      const document = await storage.getDocumentWithBatch(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if user has permission to delete
+      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Delete file from filesystem if it exists
+      if (document.filePath) {
+        try {
+          fs.unlinkSync(document.filePath);
+          console.log(`Deleted file: ${document.filePath}`);
+        } catch (fileError) {
+          console.error(`Error deleting file ${document.filePath}:`, fileError);
+          // Continue with the document deletion even if file deletion fails
+        }
+      }
+      
+      // Delete the document from database
+      const deleted = await storage.deleteDocument(documentId);
+      
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      res.status(500).json({ error: 'Failed to delete document' });
+    }
+  });
 
   const httpServer = createServer(app);
 
