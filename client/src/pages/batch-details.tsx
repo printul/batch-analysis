@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
@@ -201,6 +202,9 @@ export default function BatchDetailsPage() {
                         description: "The batch and all its documents have been deleted successfully."
                       });
                       
+                      // Invalidate the batches query to ensure the dashboard updates
+                      queryClient.invalidateQueries({ queryKey: ['/api/document-batches'] });
+                      
                       // Redirect to dashboard
                       setLocation('/dashboard');
                     } catch (error) {
@@ -285,7 +289,10 @@ export default function BatchDetailsPage() {
                                     description: "The document has been deleted successfully."
                                   });
                                   
-                                  // Refresh the data
+                                  // Invalidate queries to ensure all views update
+                                  queryClient.invalidateQueries({ queryKey: ['/api/document-batches'] });
+                                  
+                                  // Refresh the data for this page
                                   refetch();
                                 } catch (error) {
                                   console.error("Error deleting document:", error);
