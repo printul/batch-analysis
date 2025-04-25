@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -47,7 +47,7 @@ interface EditBatchModalProps {
 export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModalProps) {
   const { toast } = useToast();
   
-  // Form setup
+  // Form setup with proper default values that update when the batch changes
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -55,6 +55,16 @@ export default function EditBatchModal({ isOpen, onClose, batch }: EditBatchModa
       description: batch.description || "", 
     },
   });
+  
+  // Reset form values when batch changes or modal opens
+  useEffect(() => {
+    if (isOpen) {
+      form.reset({
+        name: batch.name,
+        description: batch.description || "",
+      });
+    }
+  }, [batch, isOpen, form]);
   
   // Edit batch mutation
   const { mutate, isPending } = useMutation({
