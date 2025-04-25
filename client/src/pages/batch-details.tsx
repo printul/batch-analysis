@@ -217,7 +217,7 @@ export default function BatchDetailsPage() {
     error,
     refetch
   } = useQuery<BatchDetailResponse>({
-    queryKey: ['batchDetails', batchId],
+    queryKey: [`/api/document-batches/${batchId}`],
     enabled: !!batchId,
     retry: 3,
     queryFn: async () => {
@@ -440,7 +440,7 @@ export default function BatchDetailsPage() {
                                   });
                                   
                                   // Invalidate queries to ensure all views update
-                                  queryClient.invalidateQueries({ queryKey: ['/api/document-batches'] });
+                                  queryClient.invalidateQueries({ queryKey: [`/api/document-batches/${batchId}`] });
                                   
                                   // Refresh the data for this page
                                   refetch();
