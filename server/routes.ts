@@ -1431,62 +1431,76 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
               throw new Error("File is too large for AI analysis. Maximum size is 25MB.");
             }
             
-            // Read the PDF file and convert to base64
-            const fileBuffer = fs.readFileSync(filePath);
-            const base64PDF = fileBuffer.toString('base64');
-            
-            console.log(`Read PDF file (${fileSizeMB} MB), sending to OpenAI for analysis...`);
-            
-            // Use a multimodal prompt with GPT-4 Vision to analyze the PDF
-            const pdfResponse = await openai.chat.completions.create({
-              model: "gpt-4o",
-              messages: [
-                {
-                  role: "system",
-                  content: `You are a professional financial document analyst with expertise in financial markets, 
-                            investment strategies, and economic analysis. Your task is to provide a concise but detailed 
-                            executive summary of the PDF document being submitted.`
-                },
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: `Please analyze this financial PDF document titled "${document.filename}" and provide a detailed 
-                            2-3 paragraph summary focusing on:
-                            1. The main financial topics and insights in the document
-                            2. Key economic implications discussed
-                            3. Important data points, trends, or metrics mentioned
-                            4. Financial contexts and market impacts
-                            
-                            The summary should be factual and based ONLY on the actual content of the PDF, 
-                            not assumptions based on the title.`
-                    },
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: `data:application/pdf;base64,${base64PDF}`
+            try {
+              // Clear any existing cached summary first to ensure we get a fresh one
+              await storage.deleteDocumentSummary(documentId);
+              console.log(`Cleared existing cached summary for document ID: ${documentId}`);
+              
+              // Read the PDF file and convert to base64
+              const fileBuffer = fs.readFileSync(filePath);
+              const base64PDF = fileBuffer.toString('base64');
+              
+              console.log(`Successfully read PDF file (${fileSizeMB} MB), sending to OpenAI for analysis...`);
+              
+              // Use a multimodal prompt with GPT-4 Vision to analyze the PDF
+              const pdfResponse = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                  {
+                    role: "system",
+                    content: `You are a professional financial document analyst with expertise in financial markets, 
+                              investment strategies, and economic analysis. Your task is to provide a concise but detailed 
+                              executive summary of the PDF document being submitted. ONLY use information that you can 
+                              directly see in the PDF content.`
+                  },
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "text",
+                        text: `Please analyze this financial PDF document and provide a detailed 
+                              2-3 paragraph summary focusing on:
+                              1. The main financial topics and insights in the document
+                              2. Key economic implications discussed
+                              3. Important data points, trends, or metrics mentioned
+                              4. Financial contexts and market impacts
+                              
+                              The summary MUST be factual and based ONLY on the actual content of the PDF.
+                              DO NOT make up information or base your analysis on the filename.
+                              If you cannot read the PDF contents clearly, state this explicitly rather than 
+                              inventing information.`
+                      },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: `data:application/pdf;base64,${base64PDF}`
+                        }
                       }
-                    }
-                  ]
-                }
-              ],
-              max_tokens: 800
-            });
-            
-            // Extract and clean the summary
-            const summary = pdfResponse.choices[0].message.content?.trim();
-            
-            if (!summary) {
-              throw new Error('Failed to generate summary from PDF content');
+                    ]
+                  }
+                ],
+                max_tokens: 800
+              });
+              
+              // Extract and clean the summary
+              const summary = pdfResponse.choices[0].message.content?.trim();
+              
+              if (!summary) {
+                throw new Error('Failed to generate summary from PDF content');
+              }
+              
+              console.log(`Successfully generated summary from PDF content`);
+              
+              // Save the summary to the database cache
+              await storage.saveDocumentSummary(documentId, summary);
+              console.log(`Saved summary for document ID: ${documentId} to cache`);
+              
+              // Return the summary
+              return res.json({ summary });
+            } catch (visionError) {
+              console.error('Error processing PDF with Vision API:', visionError);
+              throw new Error(`Failed to analyze PDF with Vision API: ${visionError.message}`);
             }
-            
-            // Save the summary to the database cache
-            await storage.saveDocumentSummary(documentId, summary);
-            console.log(`Saved summary for document ID: ${documentId} to cache`);
-            
-            // Return the summary
-            return res.json({ summary });
           } catch (error) {
             console.error('Error processing PDF with Vision API:', error);
             
