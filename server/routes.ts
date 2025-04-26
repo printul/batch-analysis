@@ -6,12 +6,12 @@ import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
 import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema, documentBatchSchema } from "@shared/schema";
 import NodeCron from "node-cron";
-import { analyzeTweets, analyzeDocuments, openai } from "./openai";
+import { analyzeTweets, analyzeDocuments } from "./openai";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import * as pdfjs from "pdfjs-dist";
 import { setupAuth } from "./auth";
-
 
 declare module 'express-session' {
   interface SessionData {
@@ -55,17 +55,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Middleware to check if user is authenticated
   const isAuthenticated = (req: Request, res: Response, next: Function) => {
-    console.log('[AUTH DEBUG] Session ID:', req.sessionID);
-    console.log('[AUTH DEBUG] Session:', req.session);
-    console.log('[AUTH DEBUG] isAuthenticated:', req.isAuthenticated());
-    console.log('[AUTH DEBUG] User:', req.user);
-    
     if (req.isAuthenticated()) {
-      console.log('[AUTH DEBUG] User authorized:', req.user.id, req.user.username);
       return next();
     }
-    
-    console.log('[AUTH DEBUG] Authorization failed');
     res.status(401).json({ error: 'Unauthorized' });
   };
 
@@ -581,7 +573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/search-history', isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user!.id;
+      const userId = req.session.user!.id;
       await storage.deleteSearchHistory(userId);
       
       res.json({ success: true });
@@ -813,42 +805,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Update document batch (for renaming batches)
-  app.patch('/api/document-batches/:id', isAuthenticated, async (req, res) => {
-    try {
-      const batchId = parseInt(req.params.id);
-      const { name, description } = req.body;
-      
-      // Validate input
-      if (!name) {
-        return res.status(400).json({ error: 'Batch name is required' });
-      }
-      
-      // Get the batch to verify ownership
-      const batch = await storage.getDocumentBatch(batchId);
-      
-      if (!batch) {
-        return res.status(404).json({ error: 'Batch not found' });
-      }
-      
-      // Verify the user owns this batch
-      if (batch.userId !== req.user!.id) {
-        return res.status(403).json({ error: 'You do not have permission to update this batch' });
-      }
-      
-      // Update the batch
-      const updatedBatch = await storage.updateDocumentBatch(batchId, { name, description });
-      
-      res.json({ 
-        success: true, 
-        batch: updatedBatch 
-      });
-    } catch (error) {
-      console.error('Error updating document batch:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
   // Static HTML routes (for compatibility with webview)
   app.get('/static', (req, res) => {
     res.sendFile('public/index.html', { root: './client' });
@@ -918,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const newBatch = await storage.createDocumentBatch({
         ...result.data,
-        userId: req.user!.id
+        userId: req.session.user!.id
       });
       
       res.status(201).json(newBatch);
@@ -930,19 +886,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches', isAuthenticated, async (req, res) => {
     try {
-      // Get batches for the current user
-      let batches = await storage.getDocumentBatchesByUserId(req.user!.id);
-      
-      // Enhance batches with document counts
-      const enhancedBatches = await Promise.all(batches.map(async (batch) => {
-        const documents = await storage.getDocumentsByBatchId(batch.id);
-        return {
-          ...batch,
-          documentCount: documents.length
-        };
-      }));
-      
-      res.json(enhancedBatches);
+      const batches = await storage.getDocumentBatchesByUserId(req.session.user!.id);
+      res.json(batches);
     } catch (error) {
       console.error('Error fetching document batches:', error);
       res.status(500).json({ error: 'Failed to fetch document batches' });
@@ -951,52 +896,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches/:id', isAuthenticated, async (req, res) => {
     try {
-      console.log(`[DEBUG] Getting batch with ID: ${req.params.id}`);
-      console.log(`[DEBUG] Authenticated user: ${req.user!.id} (${req.user!.username})`);
-      
       const batchId = parseInt(req.params.id);
-      if (isNaN(batchId)) {
-        console.error(`[ERROR] Invalid batch ID: ${req.params.id}`);
-        return res.status(400).json({ error: 'Invalid batch ID' });
-      }
-      
       const batch = await storage.getDocumentBatch(batchId);
-      console.log(`[DEBUG] Batch found: ${!!batch}`);
-      if (batch) {
-        console.log(`[DEBUG] Batch details: ID=${batch.id}, Name=${batch.name}, UserId=${batch.userId}`);
-      }
       
       if (!batch) {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
       // Check if user owns this batch
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        console.error(`[ERROR] Access denied for user ${req.user!.id} to batch owned by ${batch.userId}`);
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
       // Get documents in this batch
       const documents = await storage.getDocumentsByBatchId(batchId);
-      console.log(`[DEBUG] Found ${documents.length} documents for batch ${batchId}`);
-      if (documents.length > 0) {
-        console.log(`[DEBUG] First document: ID=${documents[0].id}, Filename=${documents[0].filename}`);
-      }
       
       // Get analysis if it exists
       const analysis = await storage.getDocumentAnalysisByBatchId(batchId);
-      console.log(`[DEBUG] Analysis exists: ${!!analysis}`);
       
-      const response = {
+      res.json({
         batch,
         documents,
         analysis
-      };
-      
-      console.log(`[DEBUG] Sending response with batch ${batchId}, ${documents.length} documents, analysis: ${!!analysis}`);
-      res.json(response);
+      });
     } catch (error) {
-      console.error('[ERROR] Error fetching document batch:', error);
+      console.error('Error fetching document batch:', error);
       res.status(500).json({ error: 'Failed to fetch document batch' });
     }
   });
@@ -1011,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user owns this batch
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
@@ -1057,7 +981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
       
@@ -1104,165 +1028,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Function to extract text from PDF
   async function extractPdfText(documentId: number, filePath: string) {
     try {
-      // For text files, just read the content directly
-      if (filePath.toLowerCase().endsWith('.txt')) {
-        const text = fs.readFileSync(filePath, 'utf8');
-        await storage.updateDocumentExtractedText(documentId, text);
-        return;
-      }
+      // Set the worker path
+      const pdfjsLib = await import('pdfjs-dist');
       
-      // For PDFs, we'll use a simple approach that doesn't require DOM APIs
-      // Since we're in a Node environment, we'll use a simpler fallback
+      // Load the PDF file
+      const data = new Uint8Array(fs.readFileSync(filePath));
+      const loadingTask = pdfjsLib.getDocument({ data });
+      const pdf = await loadingTask.promise;
+      
       let extractedText = '';
       
-      // Simple text extraction or fallback message
-      if (filePath.toLowerCase().endsWith('.pdf')) {
-        try {
-          // Read the PDF file content
-          const fileContent = fs.readFileSync(filePath);
-          
-          // Check for binary PDF indicators
-          const isPDFBinary = () => {
-            // Convert first bytes to string to check for PDF header
-            const header = fileContent.slice(0, Math.min(50, fileContent.length)).toString('utf8');
-            return header.includes('%PDF') || header.includes('/Type /Catalog');
-          };
-          
-          if (isPDFBinary()) {
-            console.log(`Document ID ${documentId} appears to be a binary PDF.`);
-            // Handle binary PDF with a marker that will trigger direct OpenAI analysis
-            const filename = path.basename(filePath);
-            extractedText = `[BINARY_PDF_CONTENT]
-Filename: ${filename}
-Document ID: ${documentId}
-Upload Date: ${new Date().toISOString()}
-File Type: PDF
-Status: Binary content detected, will be analyzed directly with OpenAI
-
-This document contains binary PDF data that cannot be directly extracted as text.
-The document metadata and filename will be used to generate a detailed analysis.`;
-          } else {
-            // Proceed with text extraction for text-based PDFs
-            const textChunks = [];
-            for (let i = 0; i < fileContent.length; i++) {
-              // Only get printable ASCII characters
-              if (fileContent[i] >= 32 && fileContent[i] <= 126) {
-                textChunks.push(String.fromCharCode(fileContent[i]));
-              } else if (fileContent[i] === 10 || fileContent[i] === 13) {
-                // Add newlines
-                textChunks.push('\n');
-              }
-            }
-            
-            const rawText = textChunks.join('');
-            
-            // Check if the extracted text looks like binary PDF content
-            if (rawText.includes('/Type /Catalog') || rawText.includes('/Pages') || 
-                rawText.match(/\/[A-Z][a-z]+ /g)?.length > 10) {
-              // This is likely binary PDF content
-              console.log(`Document ID ${documentId} text extraction found binary PDF content.`);
-              // Handle binary PDF with a marker that will trigger direct OpenAI analysis
-              const filename = path.basename(filePath);
-              extractedText = `[BINARY_PDF_CONTENT]
-Filename: ${filename}
-Document ID: ${documentId}
-Upload Date: ${new Date().toISOString()}
-File Type: PDF
-Status: Binary content detected, will be analyzed directly with OpenAI
-
-This document contains binary PDF data that cannot be directly extracted as text.
-The document metadata and filename will be used to generate a detailed analysis.`;
-            } else {
-              // Clean up the text by removing non-word sequences
-              extractedText = rawText
-                .replace(/[^\w\s.,;:!?'"()\[\]\{\}\/\\-]/g, ' ')
-                .replace(/\s+/g, ' ');
-              
-              // Final check for meaningless content
-              if (extractedText.trim().length < 100 || 
-                  extractedText.split(/\s+/).length < 20) {
-                extractedText = `[MINIMAL_TEXT_CONTENT] This document contains minimal extractable text content.
-                
-The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While the document appears to have very little text content (possibly a scanned document or image-based PDF), our system will still analyze what's available and provide insights in the analysis results.`;
-              }
-            }
-          }
-        } catch (err) {
-          console.error('PDF text extraction failed:', err);
-          extractedText = `Error extracting text from PDF: ${err.message}`;
-        }
-      } else {
-        extractedText = `Content from ${path.basename(filePath)}. File type not supported for direct text extraction.`;
+      // Extract text from each page
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map((item: any) => item.str);
+        extractedText += strings.join(' ') + '\n';
       }
       
       // Update the document with the extracted text
       await storage.updateDocumentExtractedText(documentId, extractedText);
-      console.log(`Text extraction completed for document ID: ${documentId}`);
+      console.log(`Successfully extracted text from PDF document ID: ${documentId}`);
     } catch (error) {
       console.error(`Error extracting text from PDF (document ID: ${documentId}):`, error);
     }
   }
 
-  // Debug endpoint to list all batches and documents (admin only)
-  app.get('/api/debug/batches', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      // Get all batches and their documents
-      const batches = await storage.getDocumentBatchesByUserId(req.user!.id);
-      
-      const batchesWithDocs = await Promise.all(batches.map(async (batch) => {
-        const documents = await storage.getDocumentsByBatchId(batch.id);
-        return {
-          ...batch,
-          documentCount: documents.length,
-          documents: documents
-        };
-      }));
-      
-      res.json(batchesWithDocs);
-    } catch (error) {
-      console.error('Error fetching debug batch info:', error);
-      res.status(500).json({ error: 'Failed to fetch debug information' });
-    }
-  });
-  
   // Document analysis endpoint
-  // Endpoint to analyze documents by batch ID
-  app.post('/api/document-batches/:batchId/analyze', isAuthenticated, async (req, res) => {
+  app.post('/api/documents/analyze/:batchId', isAuthenticated, async (req, res) => {
     try {
-      console.log(`[ANALYZE DEBUG] Starting analysis for batch ID: ${req.params.batchId}`);
-      console.log(`[ANALYZE DEBUG] User: ${req.user!.id} (${req.user!.username})`);
-      
       const batchId = parseInt(req.params.batchId);
       
       // Validate batch exists and user has access
       const batch = await storage.getDocumentBatch(batchId);
-      console.log(`[ANALYZE DEBUG] Batch found: ${!!batch}`);
       if (!batch) {
-        console.log(`[ANALYZE ERROR] Batch not found: ${batchId}`);
         return res.status(404).json({ error: 'Document batch not found' });
       }
-      console.log(`[ANALYZE DEBUG] Batch details: ID=${batch.id}, Name=${batch.name}, UserId=${batch.userId}`);
       
-      // Verify user access
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        console.log(`[ANALYZE ERROR] Access denied for user ${req.user!.id} to batch owned by ${batch.userId}`);
+      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
-      console.log(`[ANALYZE DEBUG] User access verified`);
       
       // Get all documents in the batch
       const documents = await storage.getDocumentsByBatchId(batchId);
-      console.log(`[ANALYZE DEBUG] Found ${documents.length} documents for batch ${batchId}`);
       if (documents.length === 0) {
-        console.log(`[ANALYZE ERROR] No documents found in batch ${batchId}`);
         return res.status(400).json({ error: 'No documents found in this batch' });
       }
       
       // Check if documents have extracted text
-      const documentsWithText = documents.filter(doc => doc.extractedText && doc.extractedText.trim());
-      console.log(`[ANALYZE DEBUG] Found ${documentsWithText.length} documents with extracted text`);
+      const documentsWithText = documents.filter(doc => doc.extractedText);
       if (documentsWithText.length === 0) {
-        console.log(`[ANALYZE ERROR] No extracted text in any documents`);
         return res.status(400).json({ error: 'No text extracted from documents yet. Please try again later.' });
       }
       
@@ -1271,445 +1086,32 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
         filename: doc.filename,
         content: doc.extractedText || ''
       }));
-      console.log(`[ANALYZE DEBUG] Prepared ${docsForAnalysis.length} documents for analysis`);
       
-      try {
-        // Call OpenAI for analysis
-        console.log('[ANALYZE DEBUG] Calling OpenAI API for document analysis');
-        const analysis = await analyzeDocuments(docsForAnalysis);
-        console.log('[ANALYZE DEBUG] Successfully received analysis from OpenAI');
-        
-        // Map the OpenAI analysis result to our database schema
-        const analysisResult = {
-          batchId,
-          summary: analysis.summary || 'No summary available',
-          themes: analysis.themes || [],
-          tickers: analysis.tickers || [],
-          recommendations: analysis.recommendations || [],
-          sentimentScore: analysis.sentiment?.score || 3,
-          sentimentLabel: analysis.sentiment?.label || 'neutral',
-          sentimentConfidence: analysis.sentiment?.confidence || 0.5,
-          sharedIdeas: analysis.sharedIdeas || [],
-          divergingIdeas: analysis.divergingIdeas || [],
-          keyPoints: analysis.keyPoints || [],
-          // New financial data fields
-          marketSectors: analysis.marketSectors || [],
-          marketOutlook: analysis.marketOutlook || 'No market outlook available',
-          keyMetrics: analysis.keyMetrics || [],
-          investmentRisks: analysis.investmentRisks || [],
-          priceTrends: analysis.priceTrends || []
-        };
-        
-        // Save the analysis to the database
-        console.log('[ANALYZE DEBUG] Saving analysis to database');
-        const savedAnalysis = await storage.saveDocumentAnalysis(analysisResult);
-        console.log('[ANALYZE DEBUG] Analysis saved successfully');
-        
-        res.json(savedAnalysis);
-      } catch (analysisError) {
-        console.error('[ANALYZE ERROR] Error during analysis with OpenAI:', analysisError);
-        res.status(500).json({ error: 'Failed to analyze documents with AI. Please try again.' });
-      }
+      // Call OpenAI for analysis
+      const analysis = await analyzeDocuments(docsForAnalysis);
+      
+      // Map the OpenAI analysis result to our database schema
+      const analysisResult = {
+        batchId,
+        summary: analysis.summary,
+        themes: analysis.themes,
+        tickers: analysis.tickers || [],
+        recommendations: analysis.recommendations || [],
+        sentimentScore: analysis.sentiment.score,
+        sentimentLabel: analysis.sentiment.label,
+        sentimentConfidence: analysis.sentiment.confidence,
+        sharedIdeas: analysis.sharedIdeas || [],
+        divergingIdeas: analysis.divergingIdeas || [],
+        keyPoints: analysis.keyPoints
+      };
+      
+      // Save the analysis to the database
+      const savedAnalysis = await storage.saveDocumentAnalysis(analysisResult);
+      
+      res.json(savedAnalysis);
     } catch (error) {
-      console.error('[ANALYZE ERROR] General error analyzing documents:', error);
-      res.status(500).json({ error: 'Failed to analyze documents. Please try again later.' });
-    }
-  });
-  
-  // Delete document endpoint
-  app.delete('/api/documents/:id', isAuthenticated, async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      
-      // First, get the document details directly
-      const document = await storage.getDocument(documentId);
-      
-      if (!document) {
-        return res.status(404).json({ error: 'Document not found' });
-      }
-      
-      // Get the batch to check permissions
-      if (!document.batchId) {
-        return res.status(404).json({ error: 'Document batch ID not found' });
-      }
-      
-      const batchId = document.batchId;
-      const batch = await storage.getDocumentBatch(batchId);
-      
-      if (!batch) {
-        return res.status(404).json({ error: 'Document batch not found' });
-      }
-      
-      // Check if user has permission to delete
-      if (batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        return res.status(403).json({ error: 'Access denied to this document' });
-      }
-      
-      // Delete file from filesystem if it exists
-      if (document.filePath) {
-        try {
-          fs.unlinkSync(document.filePath);
-          console.log(`Deleted file: ${document.filePath}`);
-        } catch (fileError) {
-          console.error(`Error deleting file ${document.filePath}:`, fileError);
-          // Continue with the document deletion even if file deletion fails
-        }
-      }
-      
-      // Delete the document from database
-      const deleted = await storage.deleteDocument(documentId);
-      
-      // After deleting, check if this was the last document in the batch
-      // If yes, also delete any batch analysis to prevent "orphaned" analysis
-      const remainingDocuments = await storage.getDocumentsByBatchId(batchId);
-      
-      if (remainingDocuments.length === 0) {
-        console.log(`No documents left in batch ${batchId}, deleting batch analysis...`);
-        
-        // We need to add a method to delete document analysis by batch ID
-        // For now, we'll use a direct database query through the storage module
-        try {
-          // This requires adding a deleteDocumentAnalysisByBatchId method to storage.ts
-          const analysisDeleted = await storage.deleteDocumentAnalysisByBatchId(batchId);
-          console.log(`Batch analysis deleted for empty batch ${batchId}: ${analysisDeleted}`);
-        } catch (analysisError) {
-          console.error(`Error deleting orphaned analysis for batch ${batchId}:`, analysisError);
-          // Continue even if analysis deletion fails
-        }
-      }
-      
-      res.json({ success: deleted });
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      res.status(500).json({ error: 'Failed to delete document' });
-    }
-  });
-  
-  // Generate document summary with OpenAI
-  app.post('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      
-      // Get the document with its batch to verify permissions
-      const document = await storage.getDocumentWithBatch(documentId);
-      
-      if (!document) {
-        return res.status(404).json({ error: 'Document not found' });
-      }
-      
-      // Check if user has permission to access this document
-      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        return res.status(403).json({ error: 'Access denied to this document' });
-      }
-      
-      // Check if the document has text content
-      if (!document.extractedText) {
-        return res.status(400).json({ error: 'Document has no extracted text' });
-      }
-      
-      console.log(`Generating summary for document ID: ${documentId}, filename: ${document.filename}`);
-
-      // Format document for OpenAI
-      const content = document.extractedText.toString();
-      
-      // Special handling for binary PDFs
-      const isBinaryPdf = content.includes('[BINARY_PDF_CONTENT]');
-      
-      try {
-        // Configure the OpenAI request based on document type
-        const systemPrompt = `You are a professional financial document analyst with expertise in financial markets, 
-          investment strategies, and economic analysis. Your task is to provide a concise but detailed executive summary of the document.`;
-        
-        let userPrompt = "";
-        
-        if (isBinaryPdf) {
-          // For binary PDFs, we need to use the actual file content
-          try {
-            // Get the document record for the file path
-            const documentRecord = await storage.getDocument(documentId);
-            if (!documentRecord || !documentRecord.filePath) {
-              throw new Error("Document file path not found");
-            }
-            
-            // Get the actual file path
-            const filePath = documentRecord.filePath;
-            
-            // Check if file exists
-            if (!fs.existsSync(filePath)) {
-              throw new Error(`File not found at path: ${filePath}`);
-            }
-            
-            console.log(`Processing binary PDF from path: ${filePath}`);
-            
-            // Get file metadata
-            const stats = fs.statSync(filePath);
-            const fileSizeBytes = stats.size;
-            const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
-            
-            // Check if file is too large (25MB limit for API)
-            if (fileSizeBytes > 25 * 1024 * 1024) {
-              throw new Error("File is too large for AI analysis. Maximum size is 25MB.");
-            }
-            
-            try {
-              // Clear any existing cached summary first to ensure we get a fresh one
-              await storage.deleteDocumentSummary(documentId);
-              console.log(`Cleared existing cached summary for document ID: ${documentId}`);
-              
-              console.log(`Processing PDF from path: ${filePath} (${fileSizeMB} MB)`);
-              
-              // Read the file as a buffer
-              const fileBuffer = fs.readFileSync(filePath);
-              
-              // Get file stats for better logging
-              console.log(`Successfully read PDF file of size ${fileSizeBytes} bytes`);
-              
-              // Convert to base64 for sending to OpenAI
-              const base64PDF = fileBuffer.toString('base64');
-              
-              console.log(`Using Vision API for direct PDF analysis...`);
-              
-              try {
-                // Since our text extraction methods have been unreliable, we'll send the PDF directly to OpenAI's Vision API
-                // which is better equipped to handle complex PDFs
-                const pdfResponse = await openai.chat.completions.create({
-                  model: "gpt-4o",
-                  messages: [
-                    {
-                      role: "system",
-                      content: `You are a specialized financial document analyst with expertise in PDF analysis.
-                                You are examining a financial document from BofA titled "Stay BIG, sell rips".
-                                
-                                RULES:
-                                1. Extract factual information only from what you can see in the document
-                                2. Focus on key financial metrics, percentages, trends, and analysis
-                                3. Identify stock tickers, market sectors, and performance figures
-                                4. Highlight strategic recommendations and market outlook
-                                5. DO NOT fabricate information - if information is unclear, say so
-                                6. DO NOT hallucinate data points, figures, or recommendations
-                                
-                                Your output must be a factual 2-3 paragraph executive summary of the actual document content.`
-                    },
-                    {
-                      role: "user",
-                      content: [
-                        {
-                          type: "text",
-                          text: `Analyze this financial PDF document from Bank of America and provide a detailed summary:
-                                
-                                Please include:
-                                1. Main market strategy recommendations ("Stay BIG, sell rips" means what?)
-                                2. Key financial metrics, figures, and performance data
-                                3. Market trends and sector performances mentioned
-                                4. Any specific investment recommendations or warnings
-                                
-                                ONLY include information you can actually see in the document.`
-                        },
-                        {
-                          type: "image_url",
-                          image_url: {
-                            url: `data:application/pdf;base64,${base64PDF}`
-                          }
-                        }
-                      ]
-                    }
-                  ],
-                  max_tokens: 800
-                });
-                
-                // Extract and clean the summary
-                const summary = pdfResponse.choices[0].message.content?.trim();
-                
-                if (!summary) {
-                  throw new Error('Failed to generate summary from PDF content');
-                }
-                
-                console.log(`Successfully generated summary from PDF content`);
-                
-                // Save the summary to the database cache
-                await storage.saveDocumentSummary(documentId, summary);
-                console.log(`Saved summary for document ID: ${documentId} to cache`);
-                
-                // Return the summary
-                return res.json({ summary });
-                
-              } catch (textExtractionError) {
-                console.error('Error extracting text from PDF:', textExtractionError);
-                throw new Error(`Failed to extract text from PDF: ${textExtractionError.message}`);
-              }
-            } catch (processingError) {
-              console.error('Error processing PDF file:', processingError);
-              throw new Error(`Failed to process PDF file: ${processingError.message}`);
-            }
-          } catch (error) {
-            console.error('Error processing PDF with Vision API:', error);
-            
-            // Fall back with a clear error message
-            console.log(`Unable to analyze PDF directly, using error notice instead`);
-            
-            // Instead of trying to guess based on the title, provide a clear error
-            const summary = `This PDF document could not be properly analyzed by our system. 
-            
-            This could be due to one of the following reasons:
-            - The PDF may contain secured or encrypted content
-            - The PDF might be a scanned document without machine-readable text
-            - The PDF may use complex formatting or special fonts
-            - The document might be corrupted or use a non-standard PDF format
-            
-            Please try uploading a text-based PDF with machine-readable content for proper analysis.`;
-            
-            // Save this error message as the summary
-            await storage.saveDocumentSummary(documentId, summary);
-            console.log(`Saved error notice as summary for document ID: ${documentId}`);
-            
-            // Return the error message as summary
-            return res.json({ summary });
-            
-            // Never reaches this code, but keeping as comment for reference
-            /* 
-            userPrompt = `
-            The PDF document could not be analyzed. Please explain that we couldn't access the content
-            and provide guidance on uploading text-based PDFs with machine-readable content.
-            `;
-            */
-          }
-        } else {
-          // For normal text documents, use the actual content
-          // Truncate if needed
-          const maxContentLength = 8000; // Limit content length to avoid token limits
-          const truncatedContent = content.length > maxContentLength 
-            ? content.substring(0, maxContentLength) + "... [content truncated]" 
-            : content;
-          
-          userPrompt = `
-          Provide a detailed 2-3 paragraph executive summary of this financial document:
-          
-          ${truncatedContent}
-          
-          Focus on key financial insights, market implications, and actionable information.
-          Include specific data points, trends, and financial metrics mentioned in the document.
-          `;
-        }
-        
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          max_tokens: 800
-        });
-        
-        // Extract and clean the summary
-        const summary = response.choices[0].message.content?.trim();
-        
-        if (!summary) {
-          return res.status(500).json({ error: 'Failed to generate summary' });
-        }
-        
-        // Save the summary to the database cache
-        await storage.saveDocumentSummary(documentId, summary);
-        console.log(`Saved summary for document ID: ${documentId} to cache`);
-        
-        // Return the summary
-        res.json({ summary });
-        
-      } catch (openaiError: any) {
-        console.error('Error generating summary with OpenAI:', openaiError);
-        res.status(500).json({ 
-          error: 'Failed to generate document summary with AI',
-          details: openaiError.message || 'Unknown OpenAI error'
-        });
-      }
-    } catch (error: any) {
-      console.error('Error generating document summary:', error);
-      res.status(500).json({ 
-        error: 'Failed to generate document summary',
-        details: error.message || 'Unknown error'
-      });
-    }
-  });
-
-  // GET endpoint to retrieve a cached document summary
-  app.get('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      
-      // Get the document to check permissions
-      const document = await storage.getDocumentWithBatch(documentId);
-      
-      if (!document) {
-        return res.status(404).json({ error: 'Document not found' });
-      }
-      
-      // Verify user access
-      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        return res.status(403).json({ error: 'Access denied to this document' });
-      }
-      
-      // Check if we have a cached summary
-      const cachedSummary = await storage.getDocumentSummary(documentId);
-      
-      if (cachedSummary) {
-        // Return the cached summary
-        return res.json({ summary: cachedSummary.summary });
-      }
-      
-      // No cached summary found
-      // If the document has extracted text, we can indicate it needs generation
-      if (document.extractedText) {
-        return res.status(404).json({ 
-          error: 'Summary not found', 
-          status: 'needs_generation',
-          message: 'Document summary has not been generated yet'
-        });
-      } else {
-        // Document text extraction isn't complete
-        return res.status(400).json({ 
-          error: 'Document text extraction not complete', 
-          status: 'pending' 
-        });
-      }
-    } catch (error: any) {
-      console.error('Error retrieving document summary:', error);
-      res.status(500).json({ 
-        error: 'Failed to retrieve document summary',
-        details: error.message || 'Unknown error'
-      });
-    }
-  });
-
-  // DELETE endpoint to remove a cached document summary (for regeneration)
-  app.delete('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      
-      // Get the document to check permissions
-      const document = await storage.getDocumentWithBatch(documentId);
-      
-      if (!document) {
-        return res.status(404).json({ error: 'Document not found' });
-      }
-      
-      // Verify user access
-      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
-        return res.status(403).json({ error: 'Access denied to this document' });
-      }
-      
-      // Delete the cached summary
-      const deleted = await storage.deleteDocumentSummary(documentId);
-      
-      if (deleted) {
-        return res.json({ message: 'Document summary cache cleared successfully' });
-      } else {
-        return res.status(404).json({ error: 'No cached summary found for this document' });
-      }
-    } catch (error: any) {
-      console.error('Error deleting document summary cache:', error);
-      res.status(500).json({ 
-        error: 'Failed to delete document summary cache',
-        details: error.message || 'Unknown error'
-      });
+      console.error('Error analyzing documents:', error);
+      res.status(500).json({ error: 'Failed to analyze documents' });
     }
   });
 
