@@ -359,6 +359,99 @@ function generateDocumentKeywords(doc: any): string[] {
   }
 }
 
+// RealDocumentSummary component to display actual summaries from OpenAI
+function RealDocumentSummary({ document }: { document: Document }): React.ReactNode {
+  const [summary, setSummary] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  const fetchSummary = async () => {
+    if (summary) return; // Already have a summary
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Fetching summary for document ID ${document.id}`);
+      
+      const response = await fetch(`/api/documents/${document.id}/summary`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to generate summary: ${response.status} ${errorText}`);
+      }
+      
+      const data = await response.json();
+      setSummary(data.summary);
+    } catch (error) {
+      console.error("Error generating document summary:", error);
+      setError(error instanceof Error ? error.message : "Failed to generate summary");
+      toast({
+        title: "Error generating summary",
+        description: error instanceof Error ? error.message : "Failed to generate summary",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Fetch summary on mount
+  useEffect(() => {
+    fetchSummary();
+  }, [document.id]);
+  
+  // If still using the placeholder display
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-4 space-y-3">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+        <p className="text-sm text-blue-700">Generating document summary with AI...</p>
+        <p className="text-xs text-gray-500">This may take a moment</p>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="p-3 border-l-4 border-amber-500 bg-amber-50">
+        <p className="text-sm text-amber-800">Could not generate summary: {error}</p>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="mt-2"
+          onClick={fetchSummary}
+        >
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+  
+  if (summary) {
+    return (
+      <div className="prose prose-sm max-w-none">
+        <div className="text-gray-700 whitespace-pre-line">
+          {summary}
+        </div>
+        <div className="mt-2 flex items-center justify-end">
+          <Badge variant="outline" className="text-xs">AI Generated</Badge>
+        </div>
+      </div>
+    );
+  }
+  
+  // Fall back to the old method if summary generation fails or is pending
+  return generateDocumentSummary(document);
+}
+
 // Define types for the batch details response
 interface Document {
   id: number;
@@ -714,7 +807,7 @@ export default function BatchDetailsPage() {
                               <h4 className="font-medium text-gray-800 mb-2">Document Summary</h4>
                               
                               <div className="prose prose-sm max-w-none">
-                                {generateDocumentSummary(doc)}
+                                <RealDocumentSummary document={doc} />
                               </div>
                             </div>
                             
