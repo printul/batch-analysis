@@ -94,6 +94,15 @@ export const searchHistory = pgTable("search_history", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Table to store document summaries (for caching)
+export const documentSummaries = pgTable("document_summaries", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  summary: text("summary").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -139,6 +148,7 @@ export type DocumentBatch = typeof documentBatches.$inferSelect;
 export type InsertDocumentBatch = z.infer<typeof documentBatchSchema>;
 export type Document = typeof documents.$inferSelect;
 export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
+export type DocumentSummary = typeof documentSummaries.$inferSelect;
 
 // Define relations
 export const documentsRelations = relations(documents, ({ one }) => ({

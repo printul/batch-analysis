@@ -81,6 +81,11 @@ export interface IStorage {
   }): Promise<DocumentAnalysisRecord>;
   getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined>;
   
+  // Document summary operations (for caching)
+  saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary>;
+  getDocumentSummary(documentId: number): Promise<DocumentSummary | undefined>;
+  deleteDocumentSummary(documentId: number): Promise<boolean>;
+  
   // Search history operations
   saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord>;
   getRecentSearches(userId: number, limit?: number): Promise<SearchHistoryRecord[]>;
