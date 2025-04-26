@@ -364,6 +364,7 @@ function RealDocumentSummary({ document }: { document: Document }): React.ReactN
   const [summary, setSummary] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsGeneration, setNeedsGeneration] = useState<boolean>(false);
   const { toast } = useToast();
   
   const fetchSummary = async () => {
@@ -371,11 +372,102 @@ function RealDocumentSummary({ document }: { document: Document }): React.ReactN
     
     setLoading(true);
     setError(null);
+    setNeedsGeneration(false);
     
     try {
       console.log(`Fetching summary for document ID ${document.id}`);
       
+      // First try to get a cached summary
       const response = await fetch(`/api/documents/${document.id}/summary`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      
+      // Check status codes
+      if (response.status === 404) {
+        // No cached summary exists, we need to generate one
+        const errorData = await response.json();
+        if (errorData.status === 'needs_generation') {
+          setNeedsGeneration(true);
+          throw new Error("Summary needs to be generated");
+        }
+      }
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to retrieve summary: ${response.status} ${errorText}`);
+      }
+      
+      // We have a cached summary
+      const data = await response.json();
+      setSummary(data.summary);
+      
+    } catch (error) {
+      console.error("Error retrieving document summary:", error);
+      
+      // If we need to generate a summary
+      if (needsGeneration) {
+        try {
+          // Generate a new summary
+          const generateResponse = await fetch(`/api/documents/${document.id}/summary`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (!generateResponse.ok) {
+            const errorText = await generateResponse.text();
+            throw new Error(`Failed to generate summary: ${generateResponse.status} ${errorText}`);
+          }
+          
+          const data = await generateResponse.json();
+          setSummary(data.summary);
+          setNeedsGeneration(false);
+          return;
+        } catch (genError) {
+          console.error("Error generating document summary:", genError);
+          setError(genError instanceof Error ? genError.message : "Failed to generate summary");
+          toast({
+            title: "Error generating summary",
+            description: genError instanceof Error ? genError.message : "Failed to generate summary",
+            variant: "destructive"
+          });
+        }
+      } else {
+        setError(error instanceof Error ? error.message : "Failed to retrieve summary");
+        toast({
+          title: "Error retrieving summary",
+          description: error instanceof Error ? error.message : "Failed to retrieve summary",
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Regenerate summary by deleting the cached one and generating a new one
+  const regenerateSummary = async () => {
+    setLoading(true);
+    setError(null);
+    setSummary("");
+    
+    try {
+      // First delete the existing summary
+      const deleteResponse = await fetch(`/api/documents/${document.id}/summary`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        throw new Error(`Failed to clear summary cache: ${deleteResponse.status} ${errorText}`);
+      }
+      
+      // Now generate a new summary
+      const generateResponse = await fetch(`/api/documents/${document.id}/summary`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -383,19 +475,26 @@ function RealDocumentSummary({ document }: { document: Document }): React.ReactN
         }
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to generate summary: ${response.status} ${errorText}`);
+      if (!generateResponse.ok) {
+        const errorText = await generateResponse.text();
+        throw new Error(`Failed to regenerate summary: ${generateResponse.status} ${errorText}`);
       }
       
-      const data = await response.json();
+      const data = await generateResponse.json();
       setSummary(data.summary);
-    } catch (error) {
-      console.error("Error generating document summary:", error);
-      setError(error instanceof Error ? error.message : "Failed to generate summary");
+      
       toast({
-        title: "Error generating summary",
-        description: error instanceof Error ? error.message : "Failed to generate summary",
+        title: "Summary regenerated",
+        description: "Document summary has been successfully regenerated.",
+        variant: "default"
+      });
+      
+    } catch (error) {
+      console.error("Error regenerating document summary:", error);
+      setError(error instanceof Error ? error.message : "Failed to regenerate summary");
+      toast({
+        title: "Error regenerating summary",
+        description: error instanceof Error ? error.message : "Failed to regenerate summary",
         variant: "destructive"
       });
     } finally {
@@ -405,6 +504,10 @@ function RealDocumentSummary({ document }: { document: Document }): React.ReactN
   
   // Fetch summary on mount
   useEffect(() => {
+    setSummary("");
+    setError(null);
+    setLoading(false);
+    setNeedsGeneration(false);
     fetchSummary();
   }, [document.id]);
   
@@ -441,7 +544,15 @@ function RealDocumentSummary({ document }: { document: Document }): React.ReactN
         <div className="text-gray-700 whitespace-pre-line">
           {summary}
         </div>
-        <div className="mt-2 flex items-center justify-end">
+        <div className="mt-2 flex items-center justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={regenerateSummary}
+            className="text-xs flex items-center"
+          >
+            <RefreshCw className="h-3 w-3 mr-1" /> Regenerate
+          </Button>
           <Badge variant="outline" className="text-xs">AI Generated</Badge>
         </div>
       </div>

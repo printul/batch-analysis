@@ -1461,6 +1461,10 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
           return res.status(500).json({ error: 'Failed to generate summary' });
         }
         
+        // Save the summary to the database cache
+        await storage.saveDocumentSummary(documentId, summary);
+        console.log(`Saved summary for document ID: ${documentId} to cache`);
+        
         // Return the summary
         res.json({ summary });
         
@@ -1475,6 +1479,89 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
       console.error('Error generating document summary:', error);
       res.status(500).json({ 
         error: 'Failed to generate document summary',
+        details: error.message || 'Unknown error'
+      });
+    }
+  });
+
+  // GET endpoint to retrieve a cached document summary
+  app.get('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      
+      // Get the document to check permissions
+      const document = await storage.getDocumentWithBatch(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Verify user access
+      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Check if we have a cached summary
+      const cachedSummary = await storage.getDocumentSummary(documentId);
+      
+      if (cachedSummary) {
+        // Return the cached summary
+        return res.json({ summary: cachedSummary.summary });
+      }
+      
+      // No cached summary found
+      // If the document has extracted text, we can indicate it needs generation
+      if (document.extractedText) {
+        return res.status(404).json({ 
+          error: 'Summary not found', 
+          status: 'needs_generation',
+          message: 'Document summary has not been generated yet'
+        });
+      } else {
+        // Document text extraction isn't complete
+        return res.status(400).json({ 
+          error: 'Document text extraction not complete', 
+          status: 'pending' 
+        });
+      }
+    } catch (error: any) {
+      console.error('Error retrieving document summary:', error);
+      res.status(500).json({ 
+        error: 'Failed to retrieve document summary',
+        details: error.message || 'Unknown error'
+      });
+    }
+  });
+
+  // DELETE endpoint to remove a cached document summary (for regeneration)
+  app.delete('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      
+      // Get the document to check permissions
+      const document = await storage.getDocumentWithBatch(documentId);
+      
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Verify user access
+      if (document.batch.userId !== req.user!.id && !req.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Delete the cached summary
+      const deleted = await storage.deleteDocumentSummary(documentId);
+      
+      if (deleted) {
+        return res.json({ message: 'Document summary cache cleared successfully' });
+      } else {
+        return res.status(404).json({ error: 'No cached summary found for this document' });
+      }
+    } catch (error: any) {
+      console.error('Error deleting document summary cache:', error);
+      res.status(500).json({ 
+        error: 'Failed to delete document summary cache',
         details: error.message || 'Unknown error'
       });
     }
