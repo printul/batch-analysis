@@ -18,7 +18,8 @@ import {
   Pencil, 
   FileText, 
   AlertTriangle, 
-  AlertCircle 
+  AlertCircle,
+  RefreshCw
 } from "lucide-react";
 import EditBatchModal from "@/components/edit-batch-modal";
 
