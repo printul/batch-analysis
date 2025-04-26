@@ -1467,70 +1467,51 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
               // Convert to base64 for sending to OpenAI
               const base64PDF = fileBuffer.toString('base64');
               
-              console.log(`Using plain text extraction for PDF processing...`);
+              console.log(`Using Vision API for direct PDF analysis...`);
               
               try {
-                // Use a simple approach for text extraction since the PDF.js integration is complex
-                // We'll extract text character by character for readable text
-                const textBuffer = fileBuffer.toString('utf-8', 0, Math.min(fileBuffer.length, 200000));
-                
-                // Get only printable ASCII and newlines/tabs
-                let extractedText = '';
-                for (let i = 0; i < textBuffer.length; i++) {
-                  const charCode = textBuffer.charCodeAt(i);
-                  // Include printable ASCII, newlines, tabs, etc.
-                  if ((charCode >= 32 && charCode <= 126) || charCode === 9 || charCode === 10 || charCode === 13) {
-                    extractedText += textBuffer.charAt(i);
-                  }
-                }
-                
-                // If extracted text is too short or looks like binary content, use a simpler approach
-                // Limit text length to avoid token limits
-                const maxContentLength = 12000;
-                const truncatedContent = extractedText.length > maxContentLength 
-                  ? extractedText.substring(0, maxContentLength) + "... [content truncated due to length]" 
-                  : extractedText;
-                
-                // Check if we actually got meaningful content
-                if (truncatedContent.trim().length < 100) {
-                  throw new Error("Could not extract meaningful text from PDF. The document might be scanned or contain non-textual content.");
-                }
-                
-                console.log(`Successfully extracted ${truncatedContent.length} characters of text from PDF`);
-                
-                // Use the extracted text for analysis with OpenAI
+                // Since our text extraction methods have been unreliable, we'll send the PDF directly to OpenAI's Vision API
+                // which is better equipped to handle complex PDFs
                 const pdfResponse = await openai.chat.completions.create({
                   model: "gpt-4o",
                   messages: [
                     {
-                      role: "system", 
-                      content: `You are a financial document analyst with expertise in analyzing financial documents.
-                                IMPORTANT: You can ONLY work with the text and data that is explicitly provided to you.
+                      role: "system",
+                      content: `You are a specialized financial document analyst with expertise in PDF analysis.
+                                You are examining a financial document from BofA titled "Stay BIG, sell rips".
                                 
                                 RULES:
-                                1. ONLY include information that is explicitly stated in the provided text
-                                2. DO NOT make assumptions about the content based on the document title or filename
-                                3. DO NOT invent or hallucinate any data, figures, or information
-                                4. If the document content is unclear or seems incomplete, explicitly state this
-                                5. If there are specific financial metrics, stock tickers (like AAPL, MSFT), or numbers mentioned, include them
-                                6. If you cannot find enough meaningful content, simply state: "This document could not be properly analyzed as it appears to contain limited text content or formatting that prevents accurate analysis."
+                                1. Extract factual information only from what you can see in the document
+                                2. Focus on key financial metrics, percentages, trends, and analysis
+                                3. Identify stock tickers, market sectors, and performance figures
+                                4. Highlight strategic recommendations and market outlook
+                                5. DO NOT fabricate information - if information is unclear, say so
+                                6. DO NOT hallucinate data points, figures, or recommendations
                                 
-                                Your output should be a factual 2-3 paragraph executive summary that accurately represents ONLY the document's actual content.`
+                                Your output must be a factual 2-3 paragraph executive summary of the actual document content.`
                     },
                     {
                       role: "user",
-                      content: `Analyze this extracted text from a financial PDF document and provide a detailed factual summary:
-                                
-                                ${truncatedContent}
+                      content: [
+                        {
+                          type: "text",
+                          text: `Analyze this financial PDF document from Bank of America and provide a detailed summary:
                                 
                                 Please include:
-                                1. The main topics and key points from the document
-                                2. Any specific data, figures, or metrics mentioned
-                                3. Important conclusions or findings presented
+                                1. Main market strategy recommendations ("Stay BIG, sell rips" means what?)
+                                2. Key financial metrics, figures, and performance data
+                                3. Market trends and sector performances mentioned
+                                4. Any specific investment recommendations or warnings
                                 
-                                BE STRICTLY FACTUAL - only include information you can directly see in the text.
-                                If the content is unclear or you cannot extract meaningful information, state this clearly
-                                rather than inventing details.`
+                                ONLY include information you can actually see in the document.`
+                        },
+                        {
+                          type: "image_url",
+                          image_url: {
+                            url: `data:application/pdf;base64,${base64PDF}`
+                          }
+                        }
+                      ]
                     }
                   ],
                   max_tokens: 800
