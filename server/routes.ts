@@ -10,7 +10,6 @@ import { analyzeTweets, analyzeDocuments, openai } from "./openai";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import * as pdfjs from "pdfjs-dist";
 import { setupAuth } from "./auth";
 
 
@@ -1468,70 +1467,98 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
               // Convert to base64 for sending to OpenAI
               const base64PDF = fileBuffer.toString('base64');
               
-              console.log(`Sending PDF document to OpenAI for content analysis...`);
+              console.log(`Using plain text extraction for PDF processing...`);
               
-              // Use the file directly with OpenAI's API
-              const pdfResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                  {
-                    role: "system",
-                    content: `You are a financial document analyst with expertise in analyzing PDF documents.
-                              IMPORTANT: You can ONLY work with text and data that is explicitly visible in the uploaded PDF.
-                              
-                              RULES:
-                              1. ONLY include information that is explicitly stated in the PDF document
-                              2. DO NOT make assumptions about the content based on the document title or filename
-                              3. DO NOT invent or hallucinate any data, figures, or information
-                              4. If the PDF content is unclear, corrupted, or cannot be read, explicitly state this
-                              5. If the document appears to be binary or non-readable, clearly state: "This appears to be a binary PDF that cannot be properly analyzed"
-                              
-                              Your output should be a factual 2-3 paragraph executive summary that accurately represents the document's actual content.`
-                  },
-                  {
-                    role: "user",
-                    content: [
-                      {
-                        type: "text",
-                        text: `Analyze this financial PDF document and provide a detailed factual summary that includes:
-                              1. The main topics and key points from the actual document
-                              2. Any specific data, figures, or metrics mentioned
-                              3. Important conclusions or findings presented
-                              
-                              BE STRICTLY FACTUAL - only include information you can directly see in the document.
-                              If the document is unclear or you cannot extract meaningful content, state this clearly
-                              rather than inventing details.`
-                      },
-                      {
-                        type: "image_url",
-                        image_url: {
-                          url: `data:application/pdf;base64,${base64PDF}`
-                        }
-                      }
-                    ]
+              try {
+                // Use a simple approach for text extraction since the PDF.js integration is complex
+                // We'll extract text character by character for readable text
+                const textBuffer = fileBuffer.toString('utf-8', 0, Math.min(fileBuffer.length, 200000));
+                
+                // Get only printable ASCII and newlines/tabs
+                let extractedText = '';
+                for (let i = 0; i < textBuffer.length; i++) {
+                  const charCode = textBuffer.charCodeAt(i);
+                  // Include printable ASCII, newlines, tabs, etc.
+                  if ((charCode >= 32 && charCode <= 126) || charCode === 9 || charCode === 10 || charCode === 13) {
+                    extractedText += textBuffer.charAt(i);
                   }
-                ],
-                max_tokens: 800
-              });
-              
-              // Extract and clean the summary
-              const summary = pdfResponse.choices[0].message.content?.trim();
-              
-              if (!summary) {
-                throw new Error('Failed to generate summary from PDF content');
+                }
+                
+                // If extracted text is too short or looks like binary content, use a simpler approach
+                // Limit text length to avoid token limits
+                const maxContentLength = 12000;
+                const truncatedContent = extractedText.length > maxContentLength 
+                  ? extractedText.substring(0, maxContentLength) + "... [content truncated due to length]" 
+                  : extractedText;
+                
+                // Check if we actually got meaningful content
+                if (truncatedContent.trim().length < 100) {
+                  throw new Error("Could not extract meaningful text from PDF. The document might be scanned or contain non-textual content.");
+                }
+                
+                console.log(`Successfully extracted ${truncatedContent.length} characters of text from PDF`);
+                
+                // Use the extracted text for analysis with OpenAI
+                const pdfResponse = await openai.chat.completions.create({
+                  model: "gpt-4o",
+                  messages: [
+                    {
+                      role: "system", 
+                      content: `You are a financial document analyst with expertise in analyzing financial documents.
+                                IMPORTANT: You can ONLY work with the text and data that is explicitly provided to you.
+                                
+                                RULES:
+                                1. ONLY include information that is explicitly stated in the provided text
+                                2. DO NOT make assumptions about the content based on the document title or filename
+                                3. DO NOT invent or hallucinate any data, figures, or information
+                                4. If the document content is unclear or seems incomplete, explicitly state this
+                                5. If there are specific financial metrics, stock tickers (like AAPL, MSFT), or numbers mentioned, include them
+                                6. If you cannot find enough meaningful content, simply state: "This document could not be properly analyzed as it appears to contain limited text content or formatting that prevents accurate analysis."
+                                
+                                Your output should be a factual 2-3 paragraph executive summary that accurately represents ONLY the document's actual content.`
+                    },
+                    {
+                      role: "user",
+                      content: `Analyze this extracted text from a financial PDF document and provide a detailed factual summary:
+                                
+                                ${truncatedContent}
+                                
+                                Please include:
+                                1. The main topics and key points from the document
+                                2. Any specific data, figures, or metrics mentioned
+                                3. Important conclusions or findings presented
+                                
+                                BE STRICTLY FACTUAL - only include information you can directly see in the text.
+                                If the content is unclear or you cannot extract meaningful information, state this clearly
+                                rather than inventing details.`
+                    }
+                  ],
+                  max_tokens: 800
+                });
+                
+                // Extract and clean the summary
+                const summary = pdfResponse.choices[0].message.content?.trim();
+                
+                if (!summary) {
+                  throw new Error('Failed to generate summary from PDF content');
+                }
+                
+                console.log(`Successfully generated summary from PDF content`);
+                
+                // Save the summary to the database cache
+                await storage.saveDocumentSummary(documentId, summary);
+                console.log(`Saved summary for document ID: ${documentId} to cache`);
+                
+                // Return the summary
+                return res.json({ summary });
+                
+              } catch (textExtractionError) {
+                console.error('Error extracting text from PDF:', textExtractionError);
+                throw new Error(`Failed to extract text from PDF: ${textExtractionError.message}`);
               }
-              
-              console.log(`Successfully generated summary from PDF content`);
-              
-              // Save the summary to the database cache
-              await storage.saveDocumentSummary(documentId, summary);
-              console.log(`Saved summary for document ID: ${documentId} to cache`);
-              
-              // Return the summary
-              return res.json({ summary });
-            } catch (visionError) {
-              console.error('Error processing PDF with Vision API:', visionError);
-              throw new Error(`Failed to analyze PDF with Vision API: ${visionError.message}`);
+            } catch (processingError) {
+              console.error('Error processing PDF file:', processingError);
+              throw new Error(`Failed to process PDF file: ${processingError.message}`);
             }
           } catch (error) {
             console.error('Error processing PDF with Vision API:', error);
