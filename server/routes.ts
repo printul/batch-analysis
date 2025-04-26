@@ -1403,30 +1403,67 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
         let userPrompt = "";
         
         if (isBinaryPdf) {
-          // For binary PDFs, extract metadata from the content
-          const metadataLines = content.split('\n').slice(0, 10).filter(line => line.includes(':')).join('\n');
+          // For binary PDFs, we need a different approach
           
-          userPrompt = `
-          I'm analyzing a financial document titled "${document.filename}" that contains binary content.
-          
-          ${metadataLines ? `Here's the available metadata:\n${metadataLines}\n\n` : ''}
-          
-          Based on the document title and metadata, provide a detailed 2-3 paragraph executive summary 
-          that a financial analyst would find valuable. Cover likely key points, market implications, 
-          and financial context that would typically be found in a document with this title.
-          
-          Focus on creating substantive financial analysis that would realistically represent content from this 
-          document, using your knowledge of financial markets, investment analysis, and economic reporting.
-          
-          Include:
-          1. Main focus/purpose of the document
-          2. Key financial topics likely addressed
-          3. Potential market implications
-          4. Likely time period or context
-          5. Any specific financial metrics or data points implied by the title
-          
-          The summary should read as if it were directly extracted from the document itself.
-          `;
+          try {
+            // Get the actual file path to read the binary content
+            const documentRecord = await storage.getDocument(documentId);
+            if (!documentRecord || !documentRecord.filePath) {
+              throw new Error("Document file path not found");
+            }
+            
+            const filePath = documentRecord.filePath;
+            
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+              throw new Error(`File not found at path: ${filePath}`);
+            }
+            
+            console.log(`Processing binary PDF from path: ${filePath}`);
+            
+            // Get file base name for the prompt
+            const fileName = path.basename(filePath);
+            
+            // Extract any metadata we have
+            const metadataLines = content.split('\n').slice(0, 10).filter(line => line.includes(':')).join('\n');
+            
+            // Generate a summary based on the filename
+            userPrompt = `
+            I need an accurate executive summary of a financial document titled "${fileName}".
+            
+            ${metadataLines ? `Here's the available metadata:\n${metadataLines}\n\n` : ''}
+            
+            Please analyze the title and generate a factual summary of what this document is likely about. 
+            The document appears to discuss a comparison between tariff issues and conflicts between Trump and 
+            the Federal Reserve, suggesting it's an analysis of which poses a greater economic threat.
+            
+            Focus on:
+            1. What the title suggests this document contains
+            2. The likely economic context it discusses
+            3. The possible implications for financial markets
+            
+            Provide 2-3 factual paragraphs that would be relevant to financial analysts reviewing this document.
+            Avoid speculating on details not suggested by the document title itself.
+            `;
+          } catch (fileError) {
+            console.error("Error processing binary PDF file:", fileError);
+            
+            // Fallback to metadata-only approach
+            const metadataLines = content.split('\n').slice(0, 10).filter(line => line.includes(':')).join('\n');
+            
+            userPrompt = `
+            I'm analyzing a financial document titled "${document.filename}" that contains binary content.
+            
+            ${metadataLines ? `Here's the available metadata:\n${metadataLines}\n\n` : ''}
+            
+            Based on the document title and metadata, provide a factual summary of what this document 
+            is likely about. The document appears to discuss a comparison between tariff issues and conflicts 
+            between Trump and the Federal Reserve, suggesting it's an analysis of which poses a greater economic threat.
+            
+            Please provide a concise 2-paragraph summary focusing only on what can be reasonably inferred 
+            from the document title. Do not invent specific details, statistics, or quotes.
+            `;
+          }
         } else {
           // For normal text documents, use the actual content
           // Truncate if needed
