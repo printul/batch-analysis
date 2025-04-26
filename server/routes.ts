@@ -1130,10 +1130,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (isPDFBinary()) {
             console.log(`Document ID ${documentId} appears to be a binary PDF.`);
-            // Handle binary PDF with a clear message and placeholder for OpenAI analysis
-            extractedText = `[BINARY_PDF_CONTENT] This document contains binary PDF data that will be analyzed by OpenAI. An executive summary will be provided in the analysis results.
+            // Handle binary PDF with a marker that will trigger direct OpenAI analysis
+            const filename = path.basename(filePath);
+            extractedText = `[BINARY_PDF_CONTENT]
+Filename: ${filename}
+Document ID: ${documentId}
+Upload Date: ${new Date().toISOString()}
+File Type: PDF
+Status: Binary content detected, will be analyzed directly with OpenAI
 
-The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While a direct text preview is not available, our system will still analyze the document content and provide insights in the analysis results.`;
+This document contains binary PDF data that cannot be directly extracted as text.
+The document metadata and filename will be used to generate a detailed analysis.`;
           } else {
             // Proceed with text extraction for text-based PDFs
             const textChunks = [];
@@ -1154,9 +1161,17 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
                 rawText.match(/\/[A-Z][a-z]+ /g)?.length > 10) {
               // This is likely binary PDF content
               console.log(`Document ID ${documentId} text extraction found binary PDF content.`);
-              extractedText = `[BINARY_PDF_CONTENT] This document contains binary PDF data that will be analyzed by OpenAI. An executive summary will be provided in the analysis results.
+              // Handle binary PDF with a marker that will trigger direct OpenAI analysis
+              const filename = path.basename(filePath);
+              extractedText = `[BINARY_PDF_CONTENT]
+Filename: ${filename}
+Document ID: ${documentId}
+Upload Date: ${new Date().toISOString()}
+File Type: PDF
+Status: Binary content detected, will be analyzed directly with OpenAI
 
-The file ${path.basename(filePath)} has been uploaded successfully and will be processed for analysis. While a direct text preview is not available, our system will still analyze the document content and provide insights in the analysis results.`;
+This document contains binary PDF data that cannot be directly extracted as text.
+The document metadata and filename will be used to generate a detailed analysis.`;
             } else {
               // Clean up the text by removing non-word sequences
               extractedText = rawText
