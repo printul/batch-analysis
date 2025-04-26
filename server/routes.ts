@@ -1403,27 +1403,110 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
         let userPrompt = "";
         
         if (isBinaryPdf) {
-          // For binary PDFs, use a simpler approach based on the title
-          const metadataLines = content.split('\n').slice(0, 10).filter(line => line.includes(':')).join('\n');
-          
-          // Extract title from filename
-          const filename = document.filename;
-          // Remove file extension and replace underscores/hyphens with spaces
-          const title = filename.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
-          
-          console.log(`Processing summary for binary PDF with title: ${title}`);
-          
-          userPrompt = `
-          I need a factual executive summary of a financial document with the title "${title}".
-          
-          ${metadataLines ? `Here's the available metadata:\n${metadataLines}\n\n` : ''}
-          
-          Based on this title alone, provide a concise 2-paragraph summary that outlines:
-          1. The main topic this document likely covers
-          2. The financial or economic context it discusses
-          
-          Avoid inventing specific details not implied by the title. Be factual and objective.
-          `;
+          // For binary PDFs, we need to use the actual file content
+          try {
+            // Get the document record for the file path
+            const documentRecord = await storage.getDocument(documentId);
+            if (!documentRecord || !documentRecord.filePath) {
+              throw new Error("Document file path not found");
+            }
+            
+            // Get the actual file path
+            const filePath = documentRecord.filePath;
+            
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+              throw new Error(`File not found at path: ${filePath}`);
+            }
+            
+            console.log(`Processing binary PDF from path: ${filePath}`);
+            
+            // Get file metadata
+            const stats = fs.statSync(filePath);
+            const fileSizeBytes = stats.size;
+            const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+            
+            // Check if file is too large (25MB limit for API)
+            if (fileSizeBytes > 25 * 1024 * 1024) {
+              throw new Error("File is too large for AI analysis. Maximum size is 25MB.");
+            }
+            
+            // Read the PDF file and convert to base64
+            const fileBuffer = fs.readFileSync(filePath);
+            const base64PDF = fileBuffer.toString('base64');
+            
+            console.log(`Read PDF file (${fileSizeMB} MB), sending to OpenAI for analysis...`);
+            
+            // Use a multimodal prompt with GPT-4 Vision to analyze the PDF
+            const pdfResponse = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a professional financial document analyst with expertise in financial markets, 
+                            investment strategies, and economic analysis. Your task is to provide a concise but detailed 
+                            executive summary of the PDF document being submitted.`
+                },
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: `Please analyze this financial PDF document titled "${document.filename}" and provide a detailed 
+                            2-3 paragraph summary focusing on:
+                            1. The main financial topics and insights in the document
+                            2. Key economic implications discussed
+                            3. Important data points, trends, or metrics mentioned
+                            4. Financial contexts and market impacts
+                            
+                            The summary should be factual and based ONLY on the actual content of the PDF, 
+                            not assumptions based on the title.`
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: `data:application/pdf;base64,${base64PDF}`
+                      }
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 800
+            });
+            
+            // Extract and clean the summary
+            const summary = pdfResponse.choices[0].message.content?.trim();
+            
+            if (!summary) {
+              throw new Error('Failed to generate summary from PDF content');
+            }
+            
+            // Save the summary to the database cache
+            await storage.saveDocumentSummary(documentId, summary);
+            console.log(`Saved summary for document ID: ${documentId} to cache`);
+            
+            // Return the summary
+            return res.json({ summary });
+          } catch (error) {
+            console.error('Error processing PDF with Vision API:', error);
+            
+            // Fall back to a basic approach based on the title
+            const filename = document.filename;
+            const title = filename.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
+            
+            console.log(`Falling back to basic title-based summary for: ${title}`);
+            
+            userPrompt = `
+            Provide a factual high-level summary of what might be found in a financial document titled "${title}".
+            
+            Focus on:
+            1. The main financial topics likely covered in this document
+            2. The financial context this document might discuss
+            
+            Keep your summary brief (2 paragraphs) and avoid inventing specific details.
+            Make it clear this is a high-level overview since we couldn't analyze the original content.
+            `;
+          }
         } else {
           // For normal text documents, use the actual content
           // Truncate if needed
