@@ -578,6 +578,25 @@ export class DatabaseStorage implements IStorage {
     return analysis;
   }
   
+  async deleteDocumentAnalysisByBatchId(batchId: number): Promise<boolean> {
+    try {
+      console.log(`Deleting document analysis for batch ID: ${batchId}`);
+      
+      const result = await db
+        .delete(documentAnalysis)
+        .where(eq(documentAnalysis.batchId, batchId))
+        .returning();
+        
+      const success = result.length > 0;
+      console.log(`Batch analysis deletion result: ${success ? 'successful' : 'no analysis found'}`);
+      
+      return success;
+    } catch (error) {
+      console.error(`Error deleting document analysis for batch ${batchId}:`, error);
+      throw error;
+    }
+  }
+  
   // Document summary methods
   async saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary> {
     try {
