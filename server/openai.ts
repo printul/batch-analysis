@@ -66,64 +66,13 @@ export async function analyzeDocuments(documents: {
   
   // Process documents: truncate each document and track total size
   const processedDocs = documents.map(doc => {
-    // Special handling for BofA "Flow Show" documents
-    const isBofADocument = doc.filename.includes('BofA') || 
-                           doc.filename.includes('Bank of America') || 
-                           doc.filename.includes('Stay BIG');
-                           
-    if (isBofADocument) {
-      console.log(`Using special handling for BofA document: ${doc.filename}`);
-      
-      // For BofA "Stay BIG, sell rips" document, we know the exact content structure
-      // This is a temporary workaround until we solve the PDF extraction issue
-      return {
-        filename: doc.filename,
-        content: `
-        Bank of America
-        Flow Show - Stay BIG, sell rips
-        Michael Hartnett
-        April 2025
-
-        Market Strategy
-        - Maintain positions in major asset classes (bonds, international stocks, gold)
-        - Sell into rallies, especially in US stocks and USD
-        - Focus on defensive sectors ("necessities") over growth/luxury sectors
-
-        YTD Performance (2025):
-        - Gold: +26.2%
-        - Government bonds: +5.6%
-        - IG bonds: +3.9%
-        - Stocks: -3.3%
-        - Commodities: -1.8%
-        - Crypto: -25.6%
-        - Oil: -12.5%
-
-        Market Indicators:
-        - Equity lows likely behind us without recession
-        - Sustained rally needs Treasury yields <4%
-        - Earnings growth must exceed 5%
-        - Recent drivers: bond yield spike, Trump approval decline, Magnificent 7 losses
-
-        Fund Flows:
-        - Cash: +$33B
-        - Stocks: +$9.2B
-        - Gold: +$3.3B
-        - Crypto: +$2.5B
-        - Bonds: -$0.7B
-
-        Strategic Recommendations:
-        - Buy dips: bonds, gold, international stocks
-        - Sell rallies: US stocks, USD
-        - Rotate to defensive sectors
-        - Expect USD weakening
-        `,
-        truncated: false,
-        isSpecialHandling: true
-      };
-    }
+    // Check if this document has text that appears to be PDF binary content
+    // Rather than handling specific document titles, we'll focus on improving 
+    // our approach to ALL PDFs with challenging content
     
-    // Handle documents with binary content marker or minimal text content
-    if (doc.content.includes('[BINARY_PDF_CONTENT]') || 
+    // Handle documents with extraction limitation notices, binary content, or minimal text
+    if (doc.content.includes('[PDF EXTRACTION LIMITATION NOTICE]') ||
+        doc.content.includes('[BINARY_PDF_CONTENT]') || 
         doc.content.includes('[MINIMAL_TEXT_CONTENT]') ||
         doc.content.startsWith('%PDF') || 
         doc.content.includes('/Type /Catalog')) {
@@ -132,7 +81,12 @@ export async function analyzeDocuments(documents: {
       
       // Get document metadata if available in structured format
       let metadata = '';
-      if (doc.content.includes('[BINARY_PDF_CONTENT]')) {
+      if (doc.content.includes('[PDF EXTRACTION LIMITATION NOTICE]')) {
+        // Extract metadata from our structured format
+        const metadataSection = doc.content.split('[PDF EXTRACTION LIMITATION NOTICE]')[1] || '';
+        const metadataLines = metadataSection.split('\n').slice(0, 10); // First 10 lines after notice
+        metadata = metadataLines.filter(line => line.includes('-')).join('\n');
+      } else if (doc.content.includes('[BINARY_PDF_CONTENT]')) {
         // Extract metadata from our structured format
         const metadataLines = doc.content.split('\n').slice(0, 10); // First 10 lines
         metadata = metadataLines.filter(line => line.includes(':')).join('\n');
@@ -146,18 +100,24 @@ export async function analyzeDocuments(documents: {
 
         ${metadata ? `Here's the document metadata:\n${metadata}\n\n` : ''}
         
-        Please provide a professional financial analysis of this document, including:
+        As a financial document analyst, I need to generate a detailed analysis of this document based primarily on its title and any contextual information available. This will be presented to users as an alternative when full text extraction fails.
         
-        1. A detailed executive summary of what this document likely contains based on its title and financial context
-        2. Key financial themes addressed in the document 
-        3. Specific economic indicators, market conditions, or financial metrics that are likely covered
-        4. Any potential stock tickers, companies, or sectors that might be mentioned (based on the filename)
-        5. The likely market sentiment and investment outlook presented
-        6. Potential financial risks and opportunities that would typically be discussed in this type of document
+        Please provide a comprehensive financial analysis of this document that:
+
+        1. Identifies key data points, figures, metrics and trends that would typically appear in this type of document
+        2. Includes realistic performance data (use plausible ranges and values based on current market conditions)
+        3. Extracts meaningful financial insights that match the document's intended purpose
+        4. Identifies likely stock tickers, market sectors, and specific asset classes mentioned
+        5. Provides a balanced assessment of risks and opportunities
+        6. Acknowledges the limits of the analysis given extraction challenges
         
-        Focus on creating a substantive financial analysis that would realistically represent what would be found in a document with this title and context, using your knowledge of financial markets, investment analysis, and economic reporting.
+        FORMAT YOUR RESPONSE WITH:
+        - Include a clear note that this is a reconstructed analysis based on document metadata
+        - Use bullet points for financial data and metrics to improve readability
+        - Present approximate figures when exact numbers cannot be determined
+        - Organize content into logical sections (overview, performance data, recommendations)
         
-        Important: This analysis will be presented directly to users as part of a financial document analysis system. Provide specific, realistic content that would likely be present in this financial document.
+        YOUR GOAL: Create a helpful, honest analysis that gives users valuable financial context about this document while clearly acknowledging the limitations of PDF analysis.
         `,
         truncated: true,
         isBinaryPdf: true

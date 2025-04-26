@@ -1034,61 +1034,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error(`Document not found with ID: ${documentId}`);
       }
       
-      // Special handling for specific known PDF files that are problematic
-      const isBofADocument = document.filename.includes('BofA') || 
-                             document.filename.includes('Bank of America') || 
-                             document.filename.includes('Stay BIG');
-                             
-      if (isBofADocument) {
-        console.log(`Using special handling for BofA Flow Show document: ${document.filename}`);
-        
-        // For BofA "Stay BIG, sell rips" PDF, we know the content and manually set it
-        // This is a temporary workaround until we solve the PDF extraction issue
-        const knownContent = `Bank of America
-Flow Show - Stay BIG, sell rips
-Michael Hartnett
-April 2025
-
-Market Strategy
-- Maintain positions in major asset classes (bonds, international stocks, gold)
-- Sell into rallies, especially in US stocks and USD
-- Focus on defensive sectors ("necessities") over growth/luxury sectors
-
-YTD Performance (2025):
-- Gold: +26.2%
-- Government bonds: +5.6%
-- IG bonds: +3.9%
-- Stocks: -3.3%
-- Commodities: -1.8%
-- Crypto: -25.6%
-- Oil: -12.5%
-
-Market Indicators:
-- Equity lows likely behind us without recession
-- Sustained rally needs Treasury yields <4%
-- Earnings growth must exceed 5%
-- Recent drivers: bond yield spike, Trump approval decline, Magnificent 7 losses
-
-Fund Flows:
-- Cash: +$33B
-- Stocks: +$9.2B
-- Gold: +$3.3B
-- Crypto: +$2.5B
-- Bonds: -$0.7B
-
-Strategic Recommendations:
-- Buy dips: bonds, gold, international stocks
-- Sell rallies: US stocks, USD
-- Rotate to defensive sectors
-- Expect USD weakening`;
-
-        // Update the document with this known content
-        await storage.updateDocumentExtractedText(documentId, knownContent);
-        console.log(`Successfully added known content for BofA document ID: ${documentId}`);
-        return;
-      }
+      console.log(`Processing PDF document: ${document.filename}`);
       
-      // For all other PDFs, use standard extraction
+      // Try multiple extraction approaches for better results
+      
+      // Method 1: Use pdf.js standard extraction
+      console.log(`Attempting standard pdf.js extraction for document: ${document.filename}`);
       const pdfjsLib = await import('pdfjs-dist');
       
       // Load the PDF file
@@ -1106,9 +1057,69 @@ Strategic Recommendations:
         extractedText += strings.join(' ') + '\n';
       }
       
-      // Update the document with the extracted text
-      await storage.updateDocumentExtractedText(documentId, extractedText);
-      console.log(`Successfully extracted text from PDF document ID: ${documentId}`);
+      // Check if we got meaningful text (more than just binary PDF markers)
+      const hasMeaningfulText = 
+        extractedText.length > 100 && 
+        !extractedText.includes('/Type /Catalog') && 
+        !extractedText.startsWith('%PDF');
+      
+      if (hasMeaningfulText) {
+        console.log(`Standard extraction successful for document ID: ${documentId}`);
+        
+        // Update the document with the extracted text
+        await storage.updateDocumentExtractedText(documentId, extractedText);
+        console.log(`Successfully extracted text from PDF document ID: ${documentId}`);
+        return;
+      }
+      
+      // Method 2: Try alternative extraction with pdf-parse library
+      try {
+        console.log(`Attempting alternative extraction with pdf-parse for document: ${document.filename}`);
+        const pdfParse = require('pdf-parse');
+        
+        const buffer = fs.readFileSync(filePath);
+        const parsedPdf = await pdfParse(buffer);
+        
+        if (parsedPdf.text && parsedPdf.text.length > 100) {
+          console.log(`pdf-parse extraction successful for document ID: ${documentId}`);
+          await storage.updateDocumentExtractedText(documentId, parsedPdf.text);
+          return;
+        }
+      } catch (parseError) {
+        console.error(`pdf-parse extraction failed for document ID: ${documentId}:`, parseError);
+      }
+      
+      // Method 3: Fall back to minimal metadata extraction
+      console.log(`Falling back to metadata extraction for document: ${document.filename}`);
+      
+      // Extract PDF info if available
+      const info = await pdf.getMetadata().catch(() => ({ info: {} }));
+      const metadata = {
+        title: info?.info?.Title || document.filename,
+        author: info?.info?.Author || 'Unknown',
+        creationDate: info?.info?.CreationDate || 'Unknown',
+        pageCount: pdf.numPages,
+      };
+      
+      // Create a structured message about the PDF extraction limitations
+      const metadataText = `
+[PDF EXTRACTION LIMITATION NOTICE]
+
+Document Metadata:
+- Title: ${metadata.title}
+- Author: ${metadata.author}
+- Creation Date: ${metadata.creationDate}
+- Pages: ${metadata.pageCount}
+
+This PDF document could not be fully extracted using our standard text extraction methods. 
+The analysis will be based on the document title and context rather than the full content.
+
+Original Filename: ${document.filename}
+      `;
+      
+      // Update with this placeholder text to trigger our special handling
+      await storage.updateDocumentExtractedText(documentId, metadataText);
+      console.log(`Added metadata context for document ID: ${documentId}`);
     } catch (error) {
       console.error(`Error extracting text from PDF (document ID: ${documentId}):`, error);
     }
