@@ -1,9 +1,10 @@
 import { 
   users, tweets, twitterAccounts, tweetAnalysis, searchHistory,
-  documentBatches, documents, documentAnalysis,
+  documentBatches, documents, documentAnalysis, documentSummaries,
   type User, type InsertUser, type Tweet, type TwitterAccount, 
   type InsertTwitterAccount, type TweetAnalysisRecord, type SearchHistoryRecord,
-  type DocumentBatch, type InsertDocumentBatch, type Document, type DocumentAnalysisRecord
+  type DocumentBatch, type InsertDocumentBatch, type Document, type DocumentAnalysisRecord,
+  type DocumentSummary
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -574,6 +575,62 @@ export class DatabaseStorage implements IStorage {
       .where(eq(documentAnalysis.batchId, batchId));
       
     return analysis;
+  }
+  
+  // Document summary methods
+  async saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary> {
+    try {
+      // Check if summary already exists
+      const existingSummary = await this.getDocumentSummary(documentId);
+      
+      if (existingSummary) {
+        // Update existing summary
+        const [updated] = await db
+          .update(documentSummaries)
+          .set({ 
+            summary,
+            updatedAt: new Date() 
+          })
+          .where(eq(documentSummaries.documentId, documentId))
+          .returning();
+          
+        return updated;
+      } else {
+        // Create new summary
+        const [newSummary] = await db
+          .insert(documentSummaries)
+          .values({
+            documentId,
+            summary,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+          .returning();
+          
+        return newSummary;
+      }
+    } catch (error) {
+      console.error('Error saving document summary:', error);
+      throw error;
+    }
+  }
+
+  async getDocumentSummary(documentId: number): Promise<DocumentSummary | undefined> {
+    const [summary] = await db
+      .select()
+      .from(documentSummaries)
+      .where(eq(documentSummaries.documentId, documentId));
+      
+    return summary;
+  }
+
+  async deleteDocumentSummary(documentId: number): Promise<boolean> {
+    const result = await db
+      .delete(documentSummaries)
+      .where(eq(documentSummaries.documentId, documentId))
+      .returning();
+      
+    return result.length > 0;
   }
 }
 
