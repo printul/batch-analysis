@@ -34,8 +34,74 @@ function generateDocumentSummary(doc: any): React.ReactNode {
   
   const extractedText = doc.extractedText?.toString() || "";
   
-  // Handle binary PDFs and poor quality extracts
-  if (extractedText.startsWith('%PDF') || 
+  // Handle binary PDFs specifically first - this is our marker for binary PDFs detected
+  if (extractedText.includes('[BINARY_PDF_CONTENT]')) {
+    // Extract metadata from binary PDF content if available
+    const lines = extractedText.split('\n');
+    const metadataLines: string[] = [];
+    
+    // Extract key metadata fields
+    for (const line of lines) {
+      if (line.includes(':') && 
+          (line.includes('Filename:') || 
+           line.includes('Document ID:') || 
+           line.includes('Upload Date:') || 
+           line.includes('File Type:') || 
+           line.includes('Status:'))) {
+        metadataLines.push(line.trim());
+      }
+    }
+    
+    return (
+      <div>
+        <h5 className="font-medium text-gray-900 mb-2">Binary PDF Document</h5>
+        <div className="p-3 border-l-4 border-blue-500 bg-blue-50 mb-4">
+          {metadataLines.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-sm">
+              {metadataLines.map((line, i) => (
+                <li key={i} className="text-gray-700">{line}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mt-2 text-sm text-gray-700">
+            This document contains binary PDF data that will be analyzed directly using OpenAI's machine learning capabilities.
+            A detailed financial analysis will be provided in the analysis results section.
+          </p>
+        </div>
+        <div className="flex items-center mt-4 bg-blue-50 p-2 rounded">
+          <AlertCircle className="h-4 w-4 text-blue-500 mr-2" />
+          <p className="text-sm text-blue-700">
+            Binary PDF detected. The content has been analyzed by AI for financial insights.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // Handle minimal text content PDFs
+  else if (extractedText.includes('[MINIMAL_TEXT_CONTENT]')) {
+    return (
+      <div>
+        <h5 className="font-medium text-gray-900 mb-2">Limited Content Document</h5>
+        <div className="p-3 border-l-4 border-amber-500 bg-amber-50 mb-4">
+          <p className="text-sm text-gray-700">
+            This document contains minimal extractable text content, possibly because it's a scanned document
+            or an image-based PDF with limited machine-readable text.
+          </p>
+          <p className="mt-2 text-sm text-gray-700">
+            Our system will analyze the available content and generate insights in the analysis results section.
+          </p>
+        </div>
+        <div className="flex items-center mt-4 bg-amber-50 p-2 rounded">
+          <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
+          <p className="text-sm text-amber-700">
+            Limited text content detected. AI analysis has been applied to extract insights.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // Handle other poor quality extracts
+  else if (extractedText.startsWith('%PDF') || 
       extractedText.includes('/Type /Catalog') ||
       extractedText.length < 100) {
     
@@ -100,7 +166,7 @@ function generateDocumentSummary(doc: any): React.ReactNode {
         <h5 className="font-medium text-gray-900 mb-2">Executive Summary: {words.slice(0, 5).join(' ')}</h5>
         <p className="text-gray-700 mb-3">
           This {docType} report from {creationDate} provides detailed analysis {topicText}. 
-          The document contains binary content that has been processed for financial insights 
+          The document contains limited extractable content that has been processed for financial insights 
           and integrated into the batch analysis with special consideration given to its key data points.
         </p>
         <div className="flex items-center mt-4 bg-blue-50 p-2 rounded">
@@ -166,8 +232,61 @@ function generateDocumentKeywords(doc: any): string[] {
   try {
     const extractedText = doc.extractedText?.toString() || "";
     
-    // For binary PDFs, extract keywords from the filename
-    if (extractedText.startsWith('%PDF') || extractedText.includes('/Type /Catalog') || extractedText.length < 100) {
+    // For binary PDFs with our special marker
+    if (extractedText.includes('[BINARY_PDF_CONTENT]')) {
+      // Extract advanced keywords for binary PDFs
+      const filename = doc.filename || '';
+      
+      // Get just the filename part without extension
+      const cleanFilename = filename.replace(/\.\w+$/, ''); // Remove file extension
+      
+      // First check if filename contains specific financial terms
+      const financialTerms = [
+        'market', 'stock', 'index', 'invest', 'fund', 'financ', 'earning', 
+        'quarter', 'fiscal', 'economic', 'forecast', 'tech', 'energy', 'health', 
+        'bank', 'crypto', 'dividend', 'growth', 'recession', 'inflation', 'rate', 
+        'fed', 'tariff', 'trump', 'threat', 'analysis', 'report'
+      ];
+      
+      // Generate smart keywords from the binary PDF content
+      const smartKeywords = [];
+      
+      // Check if filename includes financial terms
+      financialTerms.forEach(term => {
+        if (cleanFilename.toLowerCase().includes(term)) {
+          smartKeywords.push(term.charAt(0).toUpperCase() + term.slice(1));
+        }
+      });
+      
+      // Check for common vs/versus comparisons 
+      const vsMatch = cleanFilename.match(/(\w+)\s+v(?:s|\.)\s+(\w+)/i);
+      if (vsMatch) {
+        smartKeywords.push('Comparison');
+        if (vsMatch[1]) smartKeywords.push(vsMatch[1]);
+        if (vsMatch[2]) smartKeywords.push(vsMatch[2]);
+      }
+      
+      // Add some default keywords for binary PDFs
+      if (smartKeywords.length === 0) {
+        return ['Financial', 'PDF', 'Analysis', 'Binary Content', 'Document', 'Report'];
+      }
+      
+      // Add common financial document keywords if not already present
+      if (!smartKeywords.includes('Analysis')) smartKeywords.push('Analysis');
+      if (!smartKeywords.includes('Financial')) smartKeywords.push('Financial');
+      
+      return smartKeywords.slice(0, 8); // Limit to 8 keywords
+    }
+    // For minimal text content
+    else if (extractedText.includes('[MINIMAL_TEXT_CONTENT]')) {
+      // Similar approach for minimal content
+      const filename = doc.filename || '';
+      const cleanFilename = filename.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
+      
+      return ['Limited Text', 'Document', 'Financial', 'Analysis', 'Report']; 
+    }
+    // For other binary PDFs or poor quality extracts
+    else if (extractedText.startsWith('%PDF') || extractedText.includes('/Type /Catalog') || extractedText.length < 100) {
       const filename = doc.filename || '';
       const words = filename.replace(/[_-]/g, ' ')
         .replace(/\.\w+$/, '')  // Remove file extension
