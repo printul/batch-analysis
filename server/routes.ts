@@ -6,7 +6,7 @@ import MemoryStore from "memorystore";
 import { TwitterApi } from "twitter-api-v2";
 import { loginUserSchema, insertUserSchema, twitterAccountSchema, searchSchema, documentBatchSchema } from "@shared/schema";
 import NodeCron from "node-cron";
-import { analyzeTweets, analyzeDocuments } from "./openai";
+import { analyzeTweets, analyzeDocuments, openai } from "./openai";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
