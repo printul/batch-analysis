@@ -1334,7 +1334,8 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
         return res.status(404).json({ error: 'Document batch ID not found' });
       }
       
-      const batch = await storage.getDocumentBatch(document.batchId);
+      const batchId = document.batchId;
+      const batch = await storage.getDocumentBatch(batchId);
       
       if (!batch) {
         return res.status(404).json({ error: 'Document batch not found' });
@@ -1358,6 +1359,25 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
       
       // Delete the document from database
       const deleted = await storage.deleteDocument(documentId);
+      
+      // After deleting, check if this was the last document in the batch
+      // If yes, also delete any batch analysis to prevent "orphaned" analysis
+      const remainingDocuments = await storage.getDocumentsByBatchId(batchId);
+      
+      if (remainingDocuments.length === 0) {
+        console.log(`No documents left in batch ${batchId}, deleting batch analysis...`);
+        
+        // We need to add a method to delete document analysis by batch ID
+        // For now, we'll use a direct database query through the storage module
+        try {
+          // This requires adding a deleteDocumentAnalysisByBatchId method to storage.ts
+          const analysisDeleted = await storage.deleteDocumentAnalysisByBatchId(batchId);
+          console.log(`Batch analysis deleted for empty batch ${batchId}: ${analysisDeleted}`);
+        } catch (analysisError) {
+          console.error(`Error deleting orphaned analysis for batch ${batchId}:`, analysisError);
+          // Continue even if analysis deletion fails
+        }
+      }
       
       res.json({ success: deleted });
     } catch (error) {

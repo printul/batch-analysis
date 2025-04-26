@@ -81,6 +81,7 @@ export interface IStorage {
     keyPoints: string[];
   }): Promise<DocumentAnalysisRecord>;
   getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined>;
+  deleteDocumentAnalysisByBatchId(batchId: number): Promise<boolean>;
   
   // Document summary operations (for caching)
   saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary>;
