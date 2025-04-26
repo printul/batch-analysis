@@ -13,6 +13,7 @@ import fs from "fs";
 import * as pdfjs from "pdfjs-dist";
 import { setupAuth } from "./auth";
 
+
 declare module 'express-session' {
   interface SessionData {
     user?: {
@@ -1436,39 +1437,50 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
               await storage.deleteDocumentSummary(documentId);
               console.log(`Cleared existing cached summary for document ID: ${documentId}`);
               
-              // Read the PDF file and convert to base64
+              console.log(`Processing PDF from path: ${filePath} (${fileSizeMB} MB)`);
+              
+              // Read the file as a buffer
               const fileBuffer = fs.readFileSync(filePath);
+              
+              // Get file stats for better logging
+              console.log(`Successfully read PDF file of size ${fileSizeBytes} bytes`);
+              
+              // Convert to base64 for sending to OpenAI
               const base64PDF = fileBuffer.toString('base64');
               
-              console.log(`Successfully read PDF file (${fileSizeMB} MB), sending to OpenAI for analysis...`);
+              console.log(`Sending PDF document to OpenAI for content analysis...`);
               
-              // Use a multimodal prompt with GPT-4 Vision to analyze the PDF
+              // Use the file directly with OpenAI's API
               const pdfResponse = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
                   {
                     role: "system",
-                    content: `You are a professional financial document analyst with expertise in financial markets, 
-                              investment strategies, and economic analysis. Your task is to provide a concise but detailed 
-                              executive summary of the PDF document being submitted. ONLY use information that you can 
-                              directly see in the PDF content.`
+                    content: `You are a financial document analyst with expertise in analyzing PDF documents.
+                              IMPORTANT: You can ONLY work with text and data that is explicitly visible in the uploaded PDF.
+                              
+                              RULES:
+                              1. ONLY include information that is explicitly stated in the PDF document
+                              2. DO NOT make assumptions about the content based on the document title or filename
+                              3. DO NOT invent or hallucinate any data, figures, or information
+                              4. If the PDF content is unclear, corrupted, or cannot be read, explicitly state this
+                              5. If the document appears to be binary or non-readable, clearly state: "This appears to be a binary PDF that cannot be properly analyzed"
+                              
+                              Your output should be a factual 2-3 paragraph executive summary that accurately represents the document's actual content.`
                   },
                   {
                     role: "user",
                     content: [
                       {
                         type: "text",
-                        text: `Please analyze this financial PDF document and provide a detailed 
-                              2-3 paragraph summary focusing on:
-                              1. The main financial topics and insights in the document
-                              2. Key economic implications discussed
-                              3. Important data points, trends, or metrics mentioned
-                              4. Financial contexts and market impacts
+                        text: `Analyze this financial PDF document and provide a detailed factual summary that includes:
+                              1. The main topics and key points from the actual document
+                              2. Any specific data, figures, or metrics mentioned
+                              3. Important conclusions or findings presented
                               
-                              The summary MUST be factual and based ONLY on the actual content of the PDF.
-                              DO NOT make up information or base your analysis on the filename.
-                              If you cannot read the PDF contents clearly, state this explicitly rather than 
-                              inventing information.`
+                              BE STRICTLY FACTUAL - only include information you can directly see in the document.
+                              If the document is unclear or you cannot extract meaningful content, state this clearly
+                              rather than inventing details.`
                       },
                       {
                         type: "image_url",
@@ -1504,22 +1516,34 @@ The file ${path.basename(filePath)} has been uploaded successfully and will be p
           } catch (error) {
             console.error('Error processing PDF with Vision API:', error);
             
-            // Fall back to a basic approach based on the title
-            const filename = document.filename;
-            const title = filename.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
+            // Fall back with a clear error message
+            console.log(`Unable to analyze PDF directly, using error notice instead`);
             
-            console.log(`Falling back to basic title-based summary for: ${title}`);
+            // Instead of trying to guess based on the title, provide a clear error
+            const summary = `This PDF document could not be properly analyzed by our system. 
             
+            This could be due to one of the following reasons:
+            - The PDF may contain secured or encrypted content
+            - The PDF might be a scanned document without machine-readable text
+            - The PDF may use complex formatting or special fonts
+            - The document might be corrupted or use a non-standard PDF format
+            
+            Please try uploading a text-based PDF with machine-readable content for proper analysis.`;
+            
+            // Save this error message as the summary
+            await storage.saveDocumentSummary(documentId, summary);
+            console.log(`Saved error notice as summary for document ID: ${documentId}`);
+            
+            // Return the error message as summary
+            return res.json({ summary });
+            
+            // Never reaches this code, but keeping as comment for reference
+            /* 
             userPrompt = `
-            Provide a factual high-level summary of what might be found in a financial document titled "${title}".
-            
-            Focus on:
-            1. The main financial topics likely covered in this document
-            2. The financial context this document might discuss
-            
-            Keep your summary brief (2 paragraphs) and avoid inventing specific details.
-            Make it clear this is a high-level overview since we couldn't analyze the original content.
+            The PDF document could not be analyzed. Please explain that we couldn't access the content
+            and provide guidance on uploading text-based PDFs with machine-readable content.
             `;
+            */
           }
         } else {
           // For normal text documents, use the actual content
