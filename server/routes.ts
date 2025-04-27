@@ -1205,7 +1205,15 @@ Original Filename: ${document.filename}
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
-      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      // Check if user owns this batch
+      if (batch.userId !== user.id && !user.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
       
