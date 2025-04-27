@@ -23,6 +23,11 @@ declare module 'express-session' {
   }
 }
 
+// Helper function to get authenticated user from either session or passport
+function getAuthenticatedUser(req: Request): any {
+  return req.session.user || req.user;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication with Passport.js
   setupAuth(app);
@@ -1112,6 +1117,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error analyzing documents:', error);
       res.status(500).json({ error: 'Failed to analyze documents' });
+    }
+  });
+
+  // Document summary endpoints
+  // GET - Retrieve an existing summary
+  app.get('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ error: 'Invalid document ID' });
+      }
+      
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      // Get document with its batch to check ownership
+      const document = await storage.getDocumentWithBatch(documentId);
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if user owns this batch
+      if (document.batch.userId !== user.id && !user.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Get existing summary if any
+      const summary = await storage.getDocumentSummary(documentId);
+      if (!summary) {
+        return res.status(404).json({ 
+          error: 'No summary available', 
+          status: 'needs_generation' 
+        });
+      }
+      
+      res.json(summary);
+    } catch (error) {
+      console.error('Error retrieving document summary:', error);
+      res.status(500).json({ error: 'Failed to retrieve document summary' });
+    }
+  });
+  
+  // POST - Generate a new summary
+  app.post('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ error: 'Invalid document ID' });
+      }
+      
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      // Get document with its batch to check ownership
+      const document = await storage.getDocumentWithBatch(documentId);
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if user owns this batch
+      if (document.batch.userId !== user.id && !user.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Check if we have extracted text
+      if (!document.extractedText) {
+        return res.status(400).json({ 
+          error: 'No extracted text available for this document'
+        });
+      }
+      
+      // Generate summary using OpenAI
+      try {
+        // Create input for analysis in the format expected by our OpenAI function
+        const docForAnalysis = {
+          filename: document.filename,
+          content: document.extractedText
+        };
+        
+        // Call OpenAI for single document analysis
+        const analysis = await analyzeDocuments([docForAnalysis]);
+        
+        // Save the generated summary
+        const savedSummary = await storage.saveDocumentSummary(documentId, analysis.summary);
+        
+        res.json(savedSummary);
+      } catch (aiError: any) {
+        console.error('Error generating document summary with AI:', aiError);
+        return res.status(500).json({ 
+          error: 'Failed to generate document summary',
+          details: aiError.message || 'Unknown AI error'
+        });
+      }
+    } catch (error) {
+      console.error('Error generating document summary:', error);
+      res.status(500).json({ error: 'Failed to generate document summary' });
+    }
+  });
+  
+  // DELETE - Remove an existing summary
+  app.delete('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ error: 'Invalid document ID' });
+      }
+      
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      // Get document with its batch to check ownership
+      const document = await storage.getDocumentWithBatch(documentId);
+      if (!document) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      
+      // Check if user owns this batch
+      if (document.batch.userId !== user.id && !user.isAdmin) {
+        return res.status(403).json({ error: 'Access denied to this document' });
+      }
+      
+      // Delete the summary
+      await storage.deleteDocumentSummary(documentId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting document summary:', error);
+      res.status(500).json({ error: 'Failed to delete document summary' });
     }
   });
 

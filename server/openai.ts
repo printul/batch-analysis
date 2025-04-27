@@ -159,112 +159,105 @@ export async function analyzeDocuments(documents: {
 
   try {
     const systemPrompt = `You are a professional financial document analyst with expertise in financial markets, investment strategies, and economic analysis. 
-    Your task is to thoroughly analyze multiple financial documents to extract detailed insights including financial themes, market sectors, specific securities (tickers), 
-    sentiment analysis, and both shared and diverging perspectives across documents. Always respond in valid JSON format with structured, detailed financial insights.`;
+    Your task is to thoroughly analyze the provided documents to extract ONLY the insights that are EXPLICITLY present in the text. 
+    DO NOT make up information or hallucinate data that isn't clearly stated in the source text.
+    
+    CRITICAL RULES:
+    1. Only include information explicitly present in the documents
+    2. Leave fields empty (use empty arrays or "No data available" strings) when information is not present
+    3. Never invent tickers, metrics, numbers, or specific investment recommendations
+    4. Always cite specific text from the documents to support your analysis
+    5. Respond in valid JSON format with structured, factual insights only`;
     
     const userPrompt = `
-    Analyze the following financial document content to identify detailed financial insights, market trends, specific securities mentioned, investment considerations, and actionable data:
+    Analyze the following document content to identify financial insights, but ONLY report what is explicitly mentioned:
     
     ${combinedText}
     
-    Provide your comprehensive financial analysis in the following JSON format:
+    Provide your FACTUAL analysis in the following JSON format:
     {
-      "summary": "A detailed 4-6 sentence executive summary covering the key financial insights from all documents, mentioning specific sectors, market conditions, and notable securities when relevant",
+      "summary": "A truthful 3-5 sentence summary of what is ACTUALLY in the documents, omitting any details not explicitly present. If documents are damaged or incomplete, acknowledge this limitation.",
       
-      "themes": ["Major Financial Theme 1", "Major Financial Theme 2", "Major Financial Theme 3", "Major Financial Theme 4", "Major Financial Theme 5"],
+      "themes": ["Only include actual themes explicitly mentioned in the text", "Leave as empty array if not clearly present"],
       
-      "tickers": ["TICKER1", "TICKER2", "TICKER3", "TICKER4", "TICKER5"],
+      "tickers": ["Only include actual stock symbols that appear in the documents (AAPL, MSFT, etc.)", "Leave as empty array if none are mentioned"],
       
       "recommendations": [
-        "Detailed investment consideration 1 with specific reasoning",
-        "Detailed investment consideration 2 with specific reasoning",
-        "Detailed investment consideration 3 with specific reasoning",
-        "Detailed investment consideration 4 with specific reasoning"
+        "Only include explicit recommendations from the documents",
+        "Each recommendation must quote or closely paraphrase actual text",
+        "Leave as empty array if no recommendations are explicitly made"
       ],
       
       "sentiment": {
-        "score": <number 1-5 where 1 is very bearish, 3 is neutral, and 5 is very bullish>,
-        "label": "<positive/bullish, negative/bearish, or neutral>",
-        "confidence": <number 0-1 indicating confidence in sentiment analysis>
+        "score": 3, // default to neutral (3) unless clear sentiment evidence exists
+        "label": "neutral", // default to neutral unless clear evidence
+        "confidence": 0.5 // lower confidence (0.3-0.5) when evidence is limited
       },
       
       "sharedIdeas": [
-        "Common perspective 1 across documents with specific examples",
-        "Common perspective 2 across documents with specific examples",
-        "Common perspective 3 across documents with specific examples"
+        "Only include ideas that appear across multiple documents with specific references",
+        "Leave as empty array if documents don't share common perspectives"
       ],
       
       "divergingIdeas": [
-        "Contrasting viewpoint 1 with specific context from different documents",
-        "Contrasting viewpoint 2 with specific context from different documents",
-        "Contrasting viewpoint 3 with specific context from different documents"
+        "Only include explicitly contradictory viewpoints with references to specific documents",
+        "Leave as empty array if no clear contradictions exist"
       ],
       
       "keyPoints": [
-        "Critical financial insight 1 with specific data points when available",
-        "Critical financial insight 2 with specific data points when available",
-        "Critical financial insight 3 with specific data points when available",
-        "Critical financial insight 4 with specific data points when available",
-        "Critical financial insight 5 with specific data points when available"
+        "Only include major points explicitly stated in the documents",
+        "Each point must quote or closely paraphrase actual text",
+        "Leave as empty array if text is too limited to extract key points"
       ],
       
-      "marketSectors": [
-        "Detailed analysis of sector 1 performance with specific data",
-        "Detailed analysis of sector 2 performance with specific data",
-        "Detailed analysis of sector 3 performance with specific data"
-      ],
+      "marketSectors": ["Only sectors explicitly mentioned", "Leave as empty array if none are mentioned"],
       
-      "marketOutlook": "A detailed paragraph on future market outlook with specific timeframes and factors mentioned in documents",
+      "marketOutlook": "Only include an outlook if explicitly stated in the documents. Otherwise use: 'Insufficient information to determine market outlook.'",
       
       "keyMetrics": [
-        "Key financial metric 1 with actual figures (P/E ratios, yields, growth rates, etc.)",
-        "Key financial metric 2 with actual figures",
-        "Key financial metric 3 with actual figures",
-        "Key financial metric 4 with actual figures"
+        "Only include metrics explicitly mentioned with their actual values",
+        "Leave as empty array if no specific metrics are provided"
       ],
       
       "investmentRisks": [
-        "Specific investment risk 1 with concrete examples and impact assessment",
-        "Specific investment risk 2 with concrete examples and impact assessment",
-        "Specific investment risk 3 with concrete examples and impact assessment"
+        "Only include risks explicitly mentioned in the documents",
+        "Leave as empty array if no specific risks are discussed"
       ],
       
       "priceTrends": [
-        "Price trend 1 with specific numbers, timeframes and security names",
-        "Price trend 2 with specific numbers, timeframes and security names",
-        "Price trend 3 with specific numbers, timeframes and security names"
+        "Only include price trends explicitly mentioned with specific assets and directions",
+        "Leave as empty array if no price trends are discussed"
       ]
     }
     
     Detailed Guidelines:
     
-    1. For "summary", provide a professional executive summary that synthesizes the documents' financial content into a cohesive narrative, mentioning specific sectors, securities, and market conditions.
+    1. For "tickers", extract ONLY stock market ticker symbols (like AAPL, MSFT, TSLA, NVDA, SPY, QQQ) that ACTUALLY appear in the documents. DO NOT generate tickers that aren't present.
     
-    2. For "themes", identify 4-6 major financial themes that appear throughout the documents. These should be specific to financial markets, economic sectors, or investment strategies (e.g., "Rising Inflation Concerns in Technology Sector" rather than just "Inflation").
+    2. For "recommendations", include ONLY explicit recommendations from the documents. Each recommendation must be a direct quote or close paraphrase. If no clear recommendations exist, return an empty array.
     
-    3. For "tickers", extract ALL stock market ticker symbols (like AAPL, MSFT, TSLA, NVDA, SPY, QQQ) that appear in the documents. Include indices when mentioned (e.g., SPX, DJI). Don't limit to just 3-5 tickers.
+    3. For "sentiment", if the document doesn't contain clear sentiment indicators, default to neutral (score: 3, label: "neutral") with lower confidence (0.5).
     
-    4. For "recommendations", provide 3-5 detailed, actionable investment considerations based on the document analysis. These should be specific rather than general, mentioning sectors, asset classes, or specific securities when appropriate.
+    4. For "sharedIdeas" and "divergingIdeas", only include perspectives that clearly appear across multiple documents or are explicitly contradictory. If documents don't contain sufficient comparison points, return empty arrays.
     
-    5. For "sentiment", analyze the overall market sentiment considering all documents together. The score should reflect the financial outlook (1=very bearish, 3=neutral, 5=very bullish).
+    5. For "keyPoints", include ONLY major points explicitly stated in the documents. Each point must be traceable to specific text. If documents contain limited extractable content, acknowledge these limitations.
     
-    6. For "sharedIdeas", identify 3-5 substantive financial perspectives that appear consistently across documents. Include specific examples.
+    6. For "marketSectors", list ONLY sectors explicitly mentioned in the text. Do not infer sectors based on companies or other context. Return empty array if none are mentioned.
     
-    7. For "divergingIdeas", identify 3-5 financial viewpoints where documents present different or contradictory positions. Include the specific context from different documents.
+    7. For "marketOutlook", include ONLY explicitly stated outlooks. If not clearly addressed, use: "Insufficient information to determine market outlook."
     
-    8. For "keyPoints", identify 5-7 critical financial insights from the documents. These should be specific and highlight the most important financial information, including particular statistics, forecasts, or data points when available.
+    8. For "keyMetrics", include ONLY metrics explicitly mentioned with their actual values. Do not estimate or infer metrics. Return empty array if no specific metrics are provided.
     
-    9. For "marketSectors", identify 3-5 key market sectors discussed in the documents and provide specific performance data, trends, and key companies mentioned for each sector.
+    9. For "investmentRisks", include ONLY risks explicitly mentioned. Do not generate potential risks not stated in documents. Return empty array if no specific risks are discussed.
     
-    10. For "marketOutlook", synthesize a forward-looking analysis of market conditions with specific timeframes (e.g., "over the next 6-12 months"), factors that might impact markets, and potential scenarios discussed in the documents.
+    10. For "priceTrends", include ONLY price movements explicitly mentioned with specific details. Return empty array if no specific price trends are discussed.
     
-    11. For "keyMetrics", extract 3-5 financial metrics mentioned in the documents with their actual values where available (e.g., "Tesla's P/E ratio of 120", "10-year Treasury yield of 4.2%", "S&P 500 projected EPS growth of 8.3%").
-    
-    12. For "investmentRisks", identify 3-4 specific risks mentioned in the documents that could impact investments, with details on potential impacts and severity.
-    
-    13. For "priceTrends", highlight 3-4 notable price movements mentioned in the documents with specific percentage changes, timeframes, and the relevant securities (e.g., "NVIDIA (NVDA) share price increased 15.3% from January to March 2025").
-    
-    If any section is not applicable or lacks specific data in the documents, provide the most specific information possible based on what is available. For fields with no relevant information, provide an empty array or appropriate placeholder text explaining the absence of specific data.
+    FINAL CHECK BEFORE SUBMITTING:
+    1. Have I included ONLY information explicitly present in the documents?
+    2. Have I left fields empty when the documents don't contain relevant information?
+    3. Have I avoided making up tickers, metrics, recommendations or other data?
+    4. Is my analysis based on FACTUAL content, not inferences or assumptions?
+    5. For documents with partial or limited extraction, have I acknowledged these limitations?
     
     Return ONLY the JSON object, no additional explanation.`;
 
