@@ -1120,63 +1120,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Document endpoint to delete a document
-  app.delete('/api/documents/:id', isAuthenticated, async (req, res) => {
-    try {
-      const documentId = parseInt(req.params.id);
-      if (isNaN(documentId)) {
-        return res.status(400).json({ error: 'Invalid document ID' });
-      }
-      
-      // Get authenticated user
-      const user = getAuthenticatedUser(req);
-      if (!user) {
-        return res.status(401).json({ error: 'User not properly authenticated' });
-      }
-      
-      // Get document with its batch to check ownership
-      const document = await storage.getDocumentWithBatch(documentId);
-      if (!document) {
-        return res.status(404).json({ error: 'Document not found' });
-      }
-      
-      // Check if user owns this batch
-      if (document.batch.userId !== user.id && !user.isAdmin) {
-        return res.status(403).json({ error: 'Access denied to this document' });
-      }
-      
-      // Delete the document's file if it exists
-      if (document.filePath) {
-        try {
-          await fs.promises.unlink(document.filePath);
-        } catch (fileError) {
-          console.error('Error deleting document file:', fileError);
-          // Continue with deletion even if file removal fails
-        }
-      }
-      
-      // Delete document summary if it exists
-      try {
-        await storage.deleteDocumentSummary(documentId);
-      } catch (summaryError) {
-        console.error('Error deleting document summary:', summaryError);
-        // Continue with deletion even if summary removal fails
-      }
-      
-      // Delete the document from the database
-      const deleted = await storage.deleteDocument(documentId);
-      
-      if (!deleted) {
-        return res.status(500).json({ error: 'Failed to delete document' });
-      }
-      
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      res.status(500).json({ error: 'Failed to delete document' });
-    }
-  });
-
   // Document summary endpoints
   // GET - Retrieve an existing summary
   app.get('/api/documents/:id/summary', isAuthenticated, async (req, res) => {
