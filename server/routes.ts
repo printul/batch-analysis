@@ -53,17 +53,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('Twitter client configuration failed: missing required credentials');
   }
 
-  // Middleware to check if user is authenticated
-  const isAuthenticated = (req: Request, res: Response, next: Function) => {
-    if (req.isAuthenticated()) {
-      // Ensure req.session.user is set from req.user (passport) for backward compatibility
-      if (req.user && !req.session.user) {
+  // Helper function to get authenticated user info consistently
+  const getAuthenticatedUser = (req: Request): {id: number, isAdmin: boolean} | null => {
+    if (!req.isAuthenticated()) return null;
+    
+    // First try to get from Passport
+    if (req.user?.id) {
+      // Sync user data to session for backward compatibility
+      if (!req.session.user) {
         req.session.user = {
           id: req.user.id,
           username: req.user.username,
           isAdmin: req.user.isAdmin
         };
       }
+      return {
+        id: req.user.id,
+        isAdmin: !!req.user.isAdmin
+      };
+    }
+    
+    // Fall back to session
+    if (req.session.user?.id) {
+      return {
+        id: req.session.user.id,
+        isAdmin: !!req.session.user.isAdmin
+      };
+    }
+    
+    return null;
+  };
+  
+  // Middleware to check if user is authenticated
+  const isAuthenticated = (req: Request, res: Response, next: Function) => {
+    const user = getAuthenticatedUser(req);
+    if (user) {
       return next();
     }
     res.status(401).json({ error: 'Unauthorized' });
@@ -71,7 +95,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Middleware to check if user is admin
   const isAdmin = (req: Request, res: Response, next: Function) => {
-    if (req.isAuthenticated() && req.user.isAdmin) {
+    const user = getAuthenticatedUser(req);
+    if (user && user.isAdmin) {
       return next();
     }
     res.status(403).json({ error: 'Access denied' });
@@ -880,16 +905,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid batch data' });
       }
       
-      // Get user id from req.user (passport) or req.session.user
-      const userId = req.user?.id || req.session.user?.id;
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
       
-      if (!userId) {
+      if (!user) {
         return res.status(401).json({ error: 'User not properly authenticated' });
       }
       
       const newBatch = await storage.createDocumentBatch({
         ...result.data,
-        userId
+        userId: user.id
       });
       
       res.status(201).json(newBatch);
@@ -901,14 +926,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches', isAuthenticated, async (req, res) => {
     try {
-      // Get user id from req.user (passport) or req.session.user
-      const userId = req.user?.id || req.session.user?.id;
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
       
-      if (!userId) {
+      if (!user) {
         return res.status(401).json({ error: 'User not properly authenticated' });
       }
       
-      const batches = await storage.getDocumentBatchesByUserId(userId);
+      const batches = await storage.getDocumentBatchesByUserId(user.id);
       res.json(batches);
     } catch (error) {
       console.error('Error fetching document batches:', error);
@@ -925,8 +950,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
       // Check if user owns this batch
-      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+      if (batch.userId !== user.id && !user.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
@@ -956,8 +988,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
       // Check if user owns this batch
-      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+      if (batch.userId !== user.id && !user.isAdmin) {
         return res.status(403).json({ error: 'Access denied' });
       }
       
@@ -1003,7 +1042,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Document batch not found' });
       }
       
-      if (batch.userId !== req.session.user!.id && !req.session.user!.isAdmin) {
+      // Get authenticated user
+      const user = getAuthenticatedUser(req);
+      
+      if (!user) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      // Check if user owns this batch
+      if (batch.userId !== user.id && !user.isAdmin) {
         return res.status(403).json({ error: 'Access denied to this batch' });
       }
       
