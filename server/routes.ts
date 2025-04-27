@@ -56,6 +56,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Middleware to check if user is authenticated
   const isAuthenticated = (req: Request, res: Response, next: Function) => {
     if (req.isAuthenticated()) {
+      // Ensure req.session.user is set from req.user (passport) for backward compatibility
+      if (req.user && !req.session.user) {
+        req.session.user = {
+          id: req.user.id,
+          username: req.user.username,
+          isAdmin: req.user.isAdmin
+        };
+      }
       return next();
     }
     res.status(401).json({ error: 'Unauthorized' });
@@ -872,9 +880,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid batch data' });
       }
       
+      // Get user id from req.user (passport) or req.session.user
+      const userId = req.user?.id || req.session.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
       const newBatch = await storage.createDocumentBatch({
         ...result.data,
-        userId: req.session.user!.id
+        userId
       });
       
       res.status(201).json(newBatch);
@@ -886,7 +901,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/document-batches', isAuthenticated, async (req, res) => {
     try {
-      const batches = await storage.getDocumentBatchesByUserId(req.session.user!.id);
+      // Get user id from req.user (passport) or req.session.user
+      const userId = req.user?.id || req.session.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'User not properly authenticated' });
+      }
+      
+      const batches = await storage.getDocumentBatchesByUserId(userId);
       res.json(batches);
     } catch (error) {
       console.error('Error fetching document batches:', error);
