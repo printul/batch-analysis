@@ -66,65 +66,26 @@ export async function analyzeDocuments(documents: {
   
   // Process documents: truncate each document and track total size
   const processedDocs = documents.map(doc => {
-    // Check if this document has text that appears to be PDF binary content
-    // Rather than handling specific document titles, we'll focus on improving 
-    // our approach to ALL PDFs with challenging content
-    
-    // Handle documents with extraction limitation notices, binary content, or minimal text
-    if (doc.content.includes('[PDF EXTRACTION LIMITATION NOTICE]') ||
+    // Check if document is empty, too short, or contains binary/corrupt content
+    const hasActualContent = doc.content && doc.content.trim().length > 50;
+    const isProbablyBinaryOrCorrupt = 
+        !hasActualContent || 
+        doc.content.includes('[PDF EXTRACTION LIMITATION NOTICE]') ||
         doc.content.includes('[BINARY_PDF_CONTENT]') || 
         doc.content.includes('[MINIMAL_TEXT_CONTENT]') ||
         doc.content.startsWith('%PDF') || 
-        doc.content.includes('/Type /Catalog')) {
-      // Extract all available metadata from the content
-      const filename = doc.filename;
-      
-      // Get document metadata if available in structured format
-      let metadata = '';
-      if (doc.content.includes('[PDF EXTRACTION LIMITATION NOTICE]')) {
-        // Extract metadata from our structured format
-        const metadataSection = doc.content.split('[PDF EXTRACTION LIMITATION NOTICE]')[1] || '';
-        const metadataLines = metadataSection.split('\n').slice(0, 10); // First 10 lines after notice
-        metadata = metadataLines.filter(line => line.includes('-')).join('\n');
-      } else if (doc.content.includes('[BINARY_PDF_CONTENT]')) {
-        // Extract metadata from our structured format
-        const metadataLines = doc.content.split('\n').slice(0, 10); // First 10 lines
-        metadata = metadataLines.filter(line => line.includes(':')).join('\n');
-      }
-      
-      // Create specialized prompt for OpenAI to directly analyze this document
+        doc.content.includes('/Type /Catalog');
+    
+    if (isProbablyBinaryOrCorrupt) {
+      // For documents with insufficient text, create a clear message about the limitation
       return {
         filename: doc.filename,
-        content: `
-        I'm analyzing a PDF document titled "${filename}" that contains binary content or limited extractable text. 
-
-        ${metadata ? `Here's the document metadata:\n${metadata}\n\n` : ''}
-        
-        As a financial document analyst, I need to generate a detailed analysis of this document based primarily on its title and any contextual information available. This will be presented to users as an alternative when full text extraction fails.
-        
-        Please provide a comprehensive financial analysis of this document that:
-
-        1. Identifies key data points, figures, metrics and trends that would typically appear in this type of document
-        2. Includes realistic performance data (use plausible ranges and values based on current market conditions)
-        3. Extracts meaningful financial insights that match the document's intended purpose
-        4. Identifies likely stock tickers, market sectors, and specific asset classes mentioned
-        5. Provides a balanced assessment of risks and opportunities
-        6. Acknowledges the limits of the analysis given extraction challenges
-        
-        FORMAT YOUR RESPONSE WITH:
-        - Include a clear note that this is a reconstructed analysis based on document metadata
-        - Use bullet points for financial data and metrics to improve readability
-        - Present approximate figures when exact numbers cannot be determined
-        - Organize content into logical sections (overview, performance data, recommendations)
-        
-        YOUR GOAL: Create a helpful, honest analysis that gives users valuable financial context about this document while clearly acknowledging the limitations of PDF analysis.
-        `,
-        truncated: true,
-        isBinaryPdf: true
+        content: `[INSUFFICIENT_DOCUMENT_CONTENT] The document titled "${doc.filename}" contains insufficient extractable text for analysis. The text extraction process was unable to obtain meaningful content from this file. Any analysis would be purely speculative and potentially misleading.`,
+        truncated: false
       };
     }
     
-    // Otherwise truncate if needed
+    // For normal documents, truncate if needed
     const truncated = doc.content.length > MAX_DOC_CHARS;
     const content = truncated ? doc.content.substring(0, MAX_DOC_CHARS) + "... [content truncated]" : doc.content;
     
