@@ -1,657 +1,298 @@
-import { 
-  users, tweets, twitterAccounts, tweetAnalysis, searchHistory,
-  documentBatches, documents, documentAnalysis, documentSummaries,
-  type User, type InsertUser, type Tweet, type TwitterAccount, 
-  type InsertTwitterAccount, type TweetAnalysisRecord, type SearchHistoryRecord,
-  type DocumentBatch, type InsertDocumentBatch, type Document, type DocumentAnalysisRecord,
-  type DocumentSummary
-} from "@shared/schema";
-import bcrypt from "bcryptjs";
-import { db } from "./db";
-import { eq, desc, sql, ilike, and, not, like } from "drizzle-orm";
+// server/storage.ts
 
-export interface IStorage {
-  // User operations
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  getAllUsers(): Promise<User[]>;
-  deleteUser(id: number): Promise<boolean>;
-  validateUserCredentials(username: string, password: string): Promise<User | null>;
-  
-  // Tweet operations (legacy)
-  getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }>;
-  saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet>;
-  getTweetCount(): Promise<number>;
-  getTweetsByUsername(username: string, limit?: number): Promise<Tweet[]>;
-  
-  // Twitter account operations (legacy)
-  getAllTwitterAccounts(): Promise<TwitterAccount[]>;
-  getTwitterAccount(id: number): Promise<TwitterAccount | undefined>;
-  getTwitterAccountByUsername(username: string): Promise<TwitterAccount | undefined>;
-  createTwitterAccount(account: InsertTwitterAccount): Promise<TwitterAccount>;
-  deleteTwitterAccount(id: number): Promise<boolean>;
-  updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined>;
-  
-  // Tweet analysis operations (legacy)
-  saveTweetAnalysis(analysis: {
-    username: string;
-    summary: string;
-    themes: string[];
-    sentimentScore: number;
-    sentimentLabel: string;
-    sentimentConfidence: number;
-    topHashtags: string[];
-    keyPhrases: string[];
-  }): Promise<TweetAnalysisRecord>;
-  getTweetAnalysisByUsername(username: string): Promise<TweetAnalysisRecord | undefined>;
-  
-  // Document batch operations
-  createDocumentBatch(batch: InsertDocumentBatch & { userId: number }): Promise<DocumentBatch>;
-  getDocumentBatch(id: number): Promise<DocumentBatch | undefined>;
-  getDocumentBatchesByUserId(userId: number): Promise<DocumentBatch[]>;
-  updateDocumentBatch(id: number, updates: { name: string; description?: string }): Promise<DocumentBatch>;
-  deleteDocumentBatch(id: number): Promise<boolean>;
-  
-  // Document operations
-  saveDocument(document: { 
-    batchId: number;
-    filename: string;
-    fileType: string;
-    filePath: string;
-    extractedText?: string;
-  }): Promise<Document>;
-  getDocument(id: number): Promise<Document | undefined>;
-  getDocumentsByBatchId(batchId: number): Promise<Document[]>;
-  getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined>;
-  updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined>;
-  deleteDocument(id: number): Promise<boolean>;
-  
-  // Document analysis operations
-  saveDocumentAnalysis(analysis: {
-    batchId: number;
-    summary: string;
-    themes: string[];
-    tickers?: string[];
-    recommendations?: string[];
-    sentimentScore: number;
-    sentimentLabel: string;
-    sharedIdeas?: string[];
-    divergingIdeas?: string[];
-    keyPoints: string[];
-  }): Promise<DocumentAnalysisRecord>;
-  getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined>;
-  deleteDocumentAnalysisByBatchId(batchId: number): Promise<boolean>;
-  
-  // Document summary operations (for caching)
-  saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary>;
-  getDocumentSummary(documentId: number): Promise<DocumentSummary | undefined>;
-  deleteDocumentSummary(documentId: number): Promise<boolean>;
-  
-  // Search history operations
-  saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord>;
-  getRecentSearches(userId: number, limit?: number): Promise<SearchHistoryRecord[]>;
-  deleteSearchHistory(userId: number): Promise<boolean>;
+import { Pool } from "pg";
+import { pool } from "./db";
+import type { DocumentAnalysis } from "./openai";
+
+export interface DocumentBatch {
+  id: number;
+  title: string;
+  userId: number;
+  createdAt: Date;
 }
 
-export class DatabaseStorage implements IStorage {
-  constructor() {
-    // Initialize with admin user
-    this.createInitialAdminUser();
-  }
+export interface Document {
+  id: number;
+  batchId: number;
+  filename: string;
+  fileType: string;
+  filePath: string;
+  createdAt: Date;
+}
 
-  private async createInitialAdminUser() {
-    const adminExists = await this.getUserByUsername("admin");
-    if (!adminExists) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash("admin123", salt);
-      
-      await this.createUser({
-        username: "admin",
-        password: hashedPassword,
-        isAdmin: true,
-      });
-    }
-  }
+export interface DocumentSummary {
+  documentId: number;
+  summary: string;
+  createdAt: Date;
+}
 
-  async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
-  }
+export interface DocumentAnalysisRecord {
+  batchId: number;
+  analysis: DocumentAnalysis;
+  createdAt: Date;
+}
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
-  }
+export const storage = {
+  //
+  // Document‐batch functions
+  //
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    // Hash the password if it's not already hashed
-    let userPassword = insertUser.password;
-    if (!userPassword.startsWith('$2a$') && !userPassword.startsWith('$2b$')) {
-      const salt = await bcrypt.genSalt(10);
-      userPassword = await bcrypt.hash(insertUser.password, salt);
-    }
-    
-    const [user] = await db
-      .insert(users)
-      .values({
-        ...insertUser,
-        password: userPassword,
-      })
-      .returning();
-    
-    return { ...user, password: "[REDACTED]" } as User;
-  }
+  /** Create a new document batch */
+  async createDocumentBatch(opts: {
+    title: string;
+    userId: number;
+  }): Promise<DocumentBatch> {
+    const { rows } = await pool.query<{
+      id: number;
+      title: string;
+      userId: number;
+      createdAt: Date;
+    }>(
+      `
+      INSERT INTO document_batches (title, user_id)
+      VALUES ($1, $2)
+      RETURNING
+        id,
+        title,
+        user_id   AS "userId",
+        created_at AS "createdAt"
+      `,
+      [opts.title, opts.userId]
+    );
+    return rows[0];
+  },
 
-  async getAllUsers(): Promise<User[]> {
-    const allUsers = await db.select().from(users);
-    return allUsers.map(user => ({
-      ...user,
-      password: "[REDACTED]"
-    }));
-  }
+  /** Get all batches for a given user */
+  async getDocumentBatchesByUserId(
+    userId: number
+  ): Promise<DocumentBatch[]> {
+    const { rows } = await pool.query<DocumentBatch>(
+      `
+      SELECT
+        id,
+        title,
+        user_id   AS "userId",
+        created_at AS "createdAt"
+      FROM document_batches
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      `,
+      [userId]
+    );
+    return rows;
+  },
 
-  async deleteUser(id: number): Promise<boolean> {
-    const result = await db.delete(users).where(eq(users.id, id)).returning();
-    return result.length > 0;
-  }
+  /** Fetch a single batch by its ID */
+  async getDocumentBatch(id: number): Promise<DocumentBatch | null> {
+    const { rows } = await pool.query<DocumentBatch>(
+      `
+      SELECT
+        id,
+        title,
+        user_id   AS "userId",
+        created_at AS "createdAt"
+      FROM document_batches
+      WHERE id = $1
+      `,
+      [id]
+    );
+    return rows[0] ?? null;
+  },
 
-  async validateUserCredentials(username: string, password: string): Promise<User | null> {
-    const user = await this.getUserByUsername(username);
-    if (!user) return null;
-    
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return null;
-    
-    return { ...user, password: "[REDACTED]" } as User;
-  }
-
-  async getTweets(page: number, limit: number): Promise<{ tweets: Tweet[], totalTweets: number, totalPages: number }> {
-    // Filter out sample tweets
-    const { rows } = await db.$client.query("SELECT COUNT(*) as count FROM tweets WHERE tweet_id NOT LIKE 'sample%'");
-    
-    const totalTweets = Number(rows[0]?.count) || 0;
-    const totalPages = Math.ceil(totalTweets / limit);
-    
-    const offset = (page - 1) * limit;
-    
-    const paginatedTweets = await db
-      .select()
-      .from(tweets)
-      .where(
-        and(
-          not(like(tweets.tweetId, 'sample%'))
-        )
-      )
-      .orderBy(desc(tweets.createdAt))
-      .limit(limit)
-      .offset(offset);
-    
-    return {
-      tweets: paginatedTweets,
-      totalTweets,
-      totalPages
-    };
-  }
-
-  async saveTweet(tweet: Omit<Tweet, 'id'>): Promise<Tweet> {
-    try {
-      const [newTweet] = await db
-        .insert(tweets)
-        .values(tweet)
-        .returning();
-      
-      return newTweet;
-    } catch (error) {
-      // Handle duplicate key error (for sample tweets)
-      if (error instanceof Error && error.message.includes('duplicate key')) {
-        // Return the existing tweet
-        const [existingTweet] = await db
-          .select()
-          .from(tweets)
-          .where(eq(tweets.tweetId, tweet.tweetId));
-        
-        return existingTweet;
-      }
-      throw error;
-    }
-  }
-
-  async getTweetCount(): Promise<number> {
-    const { rows } = await db.$client.query('SELECT COUNT(*) as count FROM tweets');
-    return Number(rows[0]?.count) || 0;
-  }
-  
-  // Twitter account operations
-  async getAllTwitterAccounts(): Promise<TwitterAccount[]> {
-    return db.select().from(twitterAccounts).orderBy(twitterAccounts.username);
-  }
-  
-  async getTwitterAccount(id: number): Promise<TwitterAccount | undefined> {
-    const [account] = await db.select().from(twitterAccounts).where(eq(twitterAccounts.id, id));
-    return account;
-  }
-  
-  async getTwitterAccountByUsername(username: string): Promise<TwitterAccount | undefined> {
-    const [account] = await db.select().from(twitterAccounts).where(eq(twitterAccounts.username, username));
-    return account;
-  }
-  
-  async createTwitterAccount(account: InsertTwitterAccount): Promise<TwitterAccount> {
-    try {
-      const [newAccount] = await db
-        .insert(twitterAccounts)
-        .values(account)
-        .returning();
-      
-      return newAccount;
-    } catch (error) {
-      // Handle duplicate username
-      if (error instanceof Error && error.message.includes('duplicate key')) {
-        const [existingAccount] = await db
-          .select()
-          .from(twitterAccounts)
-          .where(eq(twitterAccounts.username, account.username));
-        
-        return existingAccount;
-      }
-      throw error;
-    }
-  }
-  
-  async deleteTwitterAccount(id: number): Promise<boolean> {
-    const result = await db.delete(twitterAccounts).where(eq(twitterAccounts.id, id)).returning();
-    return result.length > 0;
-  }
-  
-  async updateTwitterAccountLastFetched(id: number, lastFetched: Date): Promise<TwitterAccount | undefined> {
-    const [updated] = await db
-      .update(twitterAccounts)
-      .set({ lastFetched })
-      .where(eq(twitterAccounts.id, id))
-      .returning();
-    
-    return updated;
-  }
-
-  // Implement getTweetsByUsername
-  async getTweetsByUsername(username: string, limit: number = 20): Promise<Tweet[]> {
-    // Remove @ prefix if present
-    const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
-    
-    // Use case-insensitive search with ilike and filter out sample tweets
-    return db
-      .select()
-      .from(tweets)
-      .where(
-        and(
-          ilike(tweets.authorUsername, cleanUsername),
-          not(like(tweets.tweetId, 'sample%'))
-        )
-      )
-      .orderBy(desc(tweets.createdAt))
-      .limit(limit);
-  }
-
-  // Save tweet analysis
-  async saveTweetAnalysis(analysis: {
-    username: string;
-    summary: string;
-    themes: string[];
-    sentimentScore: number;
-    sentimentLabel: string;
-    sentimentConfidence: number;
-    topHashtags: string[];
-    keyPhrases: string[];
-  }): Promise<TweetAnalysisRecord> {
-    try {
-      // Check if analysis already exists for this username
-      const existingAnalysis = await this.getTweetAnalysisByUsername(analysis.username);
-      
-      if (existingAnalysis) {
-        // Update the existing analysis
-        const [updated] = await db
-          .update(tweetAnalysis)
-          .set(analysis)
-          .where(eq(tweetAnalysis.username, analysis.username))
-          .returning();
-          
-        return updated;
-      } else {
-        // Create new analysis
-        const [newAnalysis] = await db
-          .insert(tweetAnalysis)
-          .values(analysis)
-          .returning();
-          
-        return newAnalysis;
-      }
-    } catch (error) {
-      console.error('Error saving tweet analysis:', error);
-      throw error;
-    }
-  }
-
-  // Get tweet analysis by username
-  async getTweetAnalysisByUsername(username: string): Promise<TweetAnalysisRecord | undefined> {
-    // Remove @ prefix if present
-    const cleanUsername = username.startsWith('@') ? username.substring(1) : username;
-    
-    const [analysis] = await db
-      .select()
-      .from(tweetAnalysis)
-      .where(eq(tweetAnalysis.username, cleanUsername));
-      
-    return analysis;
-  }
-
-  // Save search query
-  async saveSearchQuery(userId: number, query: string): Promise<SearchHistoryRecord> {
-    const [searchRecord] = await db
-      .insert(searchHistory)
-      .values({
-        userId,
-        query
-      })
-      .returning();
-      
-    return searchRecord;
-  }
-
-  // Get recent searches
-  async getRecentSearches(userId: number, limit: number = 10): Promise<SearchHistoryRecord[]> {
-    return db
-      .select()
-      .from(searchHistory)
-      .where(eq(searchHistory.userId, userId))
-      .orderBy(desc(searchHistory.createdAt))
-      .limit(limit);
-  }
-
-  // Delete search history
-  async deleteSearchHistory(userId: number): Promise<boolean> {
-    const result = await db
-      .delete(searchHistory)
-      .where(eq(searchHistory.userId, userId))
-      .returning();
-      
-    return result.length > 0;
-  }
-
-  // Document batch operations
-  async createDocumentBatch(batch: InsertDocumentBatch & { userId: number }): Promise<DocumentBatch> {
-    const [newBatch] = await db
-      .insert(documentBatches)
-      .values({
-        name: batch.name,
-        description: batch.description,
-        userId: batch.userId
-      })
-      .returning();
-    
-    return newBatch;
-  }
-
-  async getDocumentBatch(id: number): Promise<DocumentBatch | undefined> {
-    const [batch] = await db
-      .select()
-      .from(documentBatches)
-      .where(eq(documentBatches.id, id));
-    
-    return batch;
-  }
-
-  async getDocumentBatchesByUserId(userId: number): Promise<DocumentBatch[]> {
-    return db
-      .select()
-      .from(documentBatches)
-      .where(eq(documentBatches.userId, userId))
-      .orderBy(desc(documentBatches.createdAt));
-  }
-  
-  async updateDocumentBatch(id: number, updates: { name: string; description?: string }): Promise<DocumentBatch> {
-    const [updatedBatch] = await db
-      .update(documentBatches)
-      .set(updates)
-      .where(eq(documentBatches.id, id))
-      .returning();
-      
-    if (!updatedBatch) {
-      throw new Error(`Document batch with ID ${id} not found`);
-    }
-    
-    return updatedBatch;
-  }
-
+  /** Delete a batch (and cascade‐delete its docs/analyses if configured) */
   async deleteDocumentBatch(id: number): Promise<boolean> {
-    // First delete all documents in the batch
-    await db
-      .delete(documents)
-      .where(eq(documents.batchId, id));
-    
-    // Then delete the batch analysis if it exists
-    await db
-      .delete(documentAnalysis)
-      .where(eq(documentAnalysis.batchId, id));
-    
-    // Finally delete the batch itself
-    const result = await db
-      .delete(documentBatches)
-      .where(eq(documentBatches.id, id))
-      .returning();
-    
-    return result.length > 0;
-  }
+    const { rowCount } = await pool.query(
+      `
+      DELETE FROM document_batches
+      WHERE id = $1
+      `,
+      [id]
+    );
+    return rowCount > 0;
+  },
 
-  // Document operations
-  async saveDocument(document: { 
+  //
+  // Document functions
+  //
+
+  /** Save a newly‐uploaded document record */
+  async saveDocument(opts: {
     batchId: number;
     filename: string;
     fileType: string;
     filePath: string;
-    extractedText?: string;
   }): Promise<Document> {
-    const [newDocument] = await db
-      .insert(documents)
-      .values(document)
-      .returning();
-    
-    return newDocument;
-  }
-  
-  async getDocument(id: number): Promise<Document | undefined> {
-    const [document] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, id));
-      
-    return document;
-  }
+    const { rows } = await pool.query<Document>(
+      `
+      INSERT INTO documents (batch_id, filename, file_type, file_path)
+      VALUES ($1, $2, $3, $4)
+      RETURNING
+        id,
+        batch_id   AS "batchId",
+        filename,
+        file_type  AS "fileType",
+        file_path  AS "filePath",
+        created_at  AS "createdAt"
+      `,
+      [opts.batchId, opts.filename, opts.fileType, opts.filePath]
+    );
+    return rows[0];
+  },
 
+  /** List all documents in a batch */
   async getDocumentsByBatchId(batchId: number): Promise<Document[]> {
-    return db
-      .select()
-      .from(documents)
-      .where(eq(documents.batchId, batchId))
-      .orderBy(documents.filename);
-  }
-  
-  async getDocumentWithBatch(id: number): Promise<(Document & { batch: DocumentBatch }) | undefined> {
-    // Manual join approach since we're having issues with the relations
-    const [document] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, id));
-    
-    if (!document || !document.batchId) {
-      return undefined;
-    }
-    
-    const [batch] = await db
-      .select()
-      .from(documentBatches)
-      .where(eq(documentBatches.id, document.batchId));
-    
-    if (!batch) {
-      return undefined;
-    }
-    
-    return {
-      ...document,
-      batch
+    const { rows } = await pool.query<Document>(
+      `
+      SELECT
+        id,
+        batch_id   AS "batchId",
+        filename,
+        file_type  AS "fileType",
+        file_path  AS "filePath",
+        created_at  AS "createdAt"
+      FROM documents
+      WHERE batch_id = $1
+      ORDER BY created_at
+      `,
+      [batchId]
+    );
+    return rows;
+  },
+
+  /** Fetch one document along with its parent batch */
+  async getDocumentWithBatch(
+    documentId: number
+  ): Promise<(Document & { batch: DocumentBatch }) | null> {
+    const { rows } = await pool.query<any>(
+      `
+      SELECT
+        d.id,
+        d.batch_id           AS "batchId",
+        d.filename,
+        d.file_type          AS "fileType",
+        d.file_path          AS "filePath",
+        d.created_at          AS "createdAt",
+        b.id                  AS "batch.id",
+        b.title               AS "batch.title",
+        b.user_id             AS "batch.userId",
+        b.created_at          AS "batch.createdAt"
+      FROM documents d
+      JOIN document_batches b ON d.batch_id = b.id
+      WHERE d.id = $1
+      `,
+      [documentId]
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    const batch: DocumentBatch = {
+      id: r["batch.id"],
+      title: r["batch.title"],
+      userId: r["batch.userId"],
+      createdAt: r["batch.createdAt"],
     };
-  }
+    const doc: Document = {
+      id: r.id,
+      batchId: r.batchId,
+      filename: r.filename,
+      fileType: r.fileType,
+      filePath: r.filePath,
+      createdAt: r.createdAt,
+    };
+    return { ...doc, batch };
+  },
 
-  async updateDocumentExtractedText(id: number, extractedText: string): Promise<Document | undefined> {
-    const [updated] = await db
-      .update(documents)
-      .set({ extractedText })
-      .where(eq(documents.id, id))
-      .returning();
-    
-    return updated;
-  }
+  //
+  // Document‐analysis functions
+  //
 
-  async deleteDocument(id: number): Promise<boolean> {
-    const result = await db
-      .delete(documents)
-      .where(eq(documents.id, id))
-      .returning();
-    
-    return result.length > 0;
-  }
-
-  // Document analysis operations
-  async saveDocumentAnalysis(analysis: {
+  /** Save or update the analysis JSON for a batch */
+  async saveDocumentAnalysis(opts: {
     batchId: number;
-    summary: string;
-    themes: string[];
-    tickers?: string[];
-    recommendations?: string[];
-    sentimentScore: number;
-    sentimentLabel: string;
-    sentimentConfidence?: number;
-    sharedIdeas?: string[];
-    divergingIdeas?: string[];
-    keyPoints: string[];
-    // New financial data fields
-    marketSectors?: string[];
-    marketOutlook?: string;
-    keyMetrics?: string[];
-    investmentRisks?: string[];
-    priceTrends?: string[];
+    analysis: DocumentAnalysis;
   }): Promise<DocumentAnalysisRecord> {
-    try {
-      // Check if analysis already exists for this batch
-      const existingAnalysis = await this.getDocumentAnalysisByBatchId(analysis.batchId);
-      
-      if (existingAnalysis) {
-        // Update the existing analysis
-        const [updated] = await db
-          .update(documentAnalysis)
-          .set(analysis)
-          .where(eq(documentAnalysis.batchId, analysis.batchId))
-          .returning();
-          
-        return updated;
-      } else {
-        // Create new analysis
-        const [newAnalysis] = await db
-          .insert(documentAnalysis)
-          .values(analysis)
-          .returning();
-          
-        return newAnalysis;
-      }
-    } catch (error) {
-      console.error('Error saving document analysis:', error);
-      throw error;
-    }
-  }
+    const { rows } = await pool.query<DocumentAnalysisRecord>(
+      `
+      INSERT INTO document_analysis (batch_id, analysis)
+      VALUES ($1, $2)
+      ON CONFLICT (batch_id)
+      DO UPDATE SET analysis = EXCLUDED.analysis
+      RETURNING
+        batch_id     AS "batchId",
+        analysis,
+        created_at   AS "createdAt"
+      `,
+      [opts.batchId, opts.analysis]
+    );
+    return rows[0];
+  },
 
-  async getDocumentAnalysisByBatchId(batchId: number): Promise<DocumentAnalysisRecord | undefined> {
-    const [analysis] = await db
-      .select()
-      .from(documentAnalysis)
-      .where(eq(documentAnalysis.batchId, batchId));
-      
-    return analysis;
-  }
-  
-  async deleteDocumentAnalysisByBatchId(batchId: number): Promise<boolean> {
-    try {
-      console.log(`Deleting document analysis for batch ID: ${batchId}`);
-      
-      const result = await db
-        .delete(documentAnalysis)
-        .where(eq(documentAnalysis.batchId, batchId))
-        .returning();
-        
-      const success = result.length > 0;
-      console.log(`Batch analysis deletion result: ${success ? 'successful' : 'no analysis found'}`);
-      
-      return success;
-    } catch (error) {
-      console.error(`Error deleting document analysis for batch ${batchId}:`, error);
-      throw error;
-    }
-  }
-  
-  // Document summary methods
-  async saveDocumentSummary(documentId: number, summary: string): Promise<DocumentSummary> {
-    try {
-      // Check if summary already exists
-      const existingSummary = await this.getDocumentSummary(documentId);
-      
-      if (existingSummary) {
-        // Update existing summary
-        const [updated] = await db
-          .update(documentSummaries)
-          .set({ 
-            summary,
-            updatedAt: new Date() 
-          })
-          .where(eq(documentSummaries.documentId, documentId))
-          .returning();
-          
-        return updated;
-      } else {
-        // Create new summary
-        const [newSummary] = await db
-          .insert(documentSummaries)
-          .values({
-            documentId,
-            summary,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          })
-          .returning();
-          
-        return newSummary;
-      }
-    } catch (error) {
-      console.error('Error saving document summary:', error);
-      throw error;
-    }
-  }
+  /** Get the analysis JSON for a batch */
+  async getDocumentAnalysisByBatchId(
+    batchId: number
+  ): Promise<DocumentAnalysis | null> {
+    const { rows } = await pool.query<{ analysis: DocumentAnalysis }>(
+      `
+      SELECT analysis
+      FROM document_analysis
+      WHERE batch_id = $1
+      `,
+      [batchId]
+    );
+    return rows[0]?.analysis ?? null;
+  },
 
-  async getDocumentSummary(documentId: number): Promise<DocumentSummary | undefined> {
-    const [summary] = await db
-      .select()
-      .from(documentSummaries)
-      .where(eq(documentSummaries.documentId, documentId));
-      
-    return summary;
-  }
+  //
+  // Document‐summary functions
+  //
 
+  /** Save or update a per‐document summary */
+  async saveDocumentSummary(
+    documentId: number,
+    summary: string
+  ): Promise<DocumentSummary> {
+    const { rows } = await pool.query<DocumentSummary>(
+      `
+      INSERT INTO document_summaries (document_id, summary)
+      VALUES ($1, $2)
+      ON CONFLICT (document_id)
+      DO UPDATE SET summary = EXCLUDED.summary
+      RETURNING
+        document_id  AS "documentId",
+        summary,
+        created_at   AS "createdAt"
+      `,
+      [documentId, summary]
+    );
+    return rows[0];
+  },
+
+  /** Fetch an existing summary for a document */
+  async getDocumentSummary(
+    documentId: number
+  ): Promise<DocumentSummary | null> {
+    const { rows } = await pool.query<DocumentSummary>(
+      `
+      SELECT
+        document_id  AS "documentId",
+        summary,
+        created_at   AS "createdAt"
+      FROM document_summaries
+      WHERE document_id = $1
+      `,
+      [documentId]
+    );
+    return rows[0] ?? null;
+  },
+
+  /** Delete a document’s summary */
   async deleteDocumentSummary(documentId: number): Promise<boolean> {
-    const result = await db
-      .delete(documentSummaries)
-      .where(eq(documentSummaries.documentId, documentId))
-      .returning();
-      
-    return result.length > 0;
-  }
-}
-
-export const storage = new DatabaseStorage();
+    const { rowCount } = await pool.query(
+      `
+      DELETE FROM document_summaries
+      WHERE document_id = $1
+      `,
+      [documentId]
+    );
+    return rowCount > 0;
+  },
+};

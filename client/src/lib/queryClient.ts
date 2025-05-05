@@ -7,22 +7,29 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export async function apiRequest(
-  method: string,
-  url: string,
-  data?: unknown | undefined,
-): Promise<Response> {
+export async function apiRequest(method: string, url: string, data?: unknown): Promise<Response> {
   try {
-    console.log(`Making ${method} request to ${url}`);
-    const res = await fetch(url, {
+    const baseUrl = import.meta.env.VITE_API_URL || "";
+    const fullUrl = `${baseUrl}${url}`;
+
+    console.log("🔎 apiRequest received URL:", url);
+    if (url === "/login") {
+      console.warn("❌ BAD PATH: /login detected. Should be /api/login!");
+    }
+    
+
+    console.trace(`🔥 Attempting fetch to: ${fullUrl}`);
+
+
+    const res = await fetch(fullUrl, {
       method,
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        Accept: "application/json",
       },
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
-      mode: "cors"
+      mode: "cors",
     });
 
     console.log(`Response status: ${res.status}, ${res.statusText}`);
@@ -42,7 +49,10 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     try {
       console.log(`Query fetching: ${queryKey[0]}`);
-      const res = await fetch(queryKey[0] as string, {
+      const baseUrl = import.meta.env.VITE_API_URL || "";
+const fullUrl = `${baseUrl}${queryKey[0] as string}`;
+const res = await fetch(fullUrl, {
+
         method: 'GET',
         headers: {
           "Accept": "application/json",

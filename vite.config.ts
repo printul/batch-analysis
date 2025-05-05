@@ -18,6 +18,20 @@ export default defineConfig({
         ]
       : []),
   ],
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PROXY CONFIGURATION: forward all /api requests to your backend on port 5050
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5050',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
+  // ─────────────────────────────────────────────────────────────────────────────
+
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

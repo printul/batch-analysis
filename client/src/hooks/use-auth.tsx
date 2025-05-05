@@ -42,37 +42,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           signal,
           credentials: 'include',
         });
-        
+
         if (!res.ok) {
           if (res.status === 401) {
-            // Not authenticated, which is a normal state
             return null;
           }
           throw new Error(`Request failed with status ${res.status}`);
         }
-        
+
         const data = await res.json();
         console.log("Auth data received:", data);
-        
-        // Check if the response has a nested user property (from /api/me)
-        if (data && data.user) {
-          return data.user;
-        }
-        
-        // Or if it's a direct user object (from /api/user)
-        if (data && data.id) {
-          return data;
-        }
-        
+
+        if (data && data.user) return data.user;
+        if (data && data.id) return data;
+
         console.error("Invalid user data format received:", data);
         return null;
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          // Query was cancelled, not an error
-          throw err;
-        }
-        
-        // Some other error occurred
+        if (err instanceof Error && err.name === 'AbortError') throw err;
         console.error('Auth error:', err);
         throw err;
       }
